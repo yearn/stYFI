@@ -98,8 +98,8 @@ def test_rewards(chain, alice, bob, reward, distributor, genesis, ll_tokens, dep
     
     epoch_rewards = UNIT * SHARES[idx] // sum(SHARES)
 
-    assert distributor.epoch_total_weight(0) == sum(SHARES) * 2 # boost
-    assert distributor.epoch_weights(ll_distributor, 0) == sum(SHARES) * 2 # boost
+    assert distributor.epoch_total_weight(0) == 4 * sum(SHARES) * 2 # boost
+    assert distributor.epoch_weights(ll_distributor, 0) == 4 * sum(SHARES) * 2 # boost
     assert ll_distributor.current_rewards(idx) == (ts - genesis, epoch_rewards)
     integral = epoch_rewards // 2 * PRECISION // (2 * DUST)
     assert ll_distributor.reward_integral(idx) == integral
