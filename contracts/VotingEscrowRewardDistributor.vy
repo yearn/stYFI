@@ -136,6 +136,8 @@ def __init__(_genesis: uint256, _token: address):
     self.total_weights[0] = Weight(weight=10**12, slope=0)
     self.weight_scale = Scale(numerator=4, denominator=1)
     self.reward_expiration = 26
+    self.reclaim_recipient = msg.sender
+    self.report_recipient = msg.sender
 
 @external
 @view
@@ -260,7 +262,7 @@ def report(_account: address) -> (uint256, uint256):
     # zero out lock
     slope: uint256 = lock.amount // MAX_NUM_EPOCHS
     self.locks[_account].amount = 0
-    self.total_weights[epoch].weight -= lock.amount + (lock.boost_epochs - epoch) * slope # TODO: check
+    self.total_weights[epoch].weight -= lock.amount + (lock.boost_epochs - epoch) * slope
     self.total_weights[epoch].slope -= slope
     self.unlocks[unlock_epoch].amount -= lock.amount + (lock.boost_epochs - unlock_epoch) * slope
     self.unlocks[unlock_epoch].slope_change -= slope
@@ -311,7 +313,7 @@ def set_reward_expiration(_expiration: uint256, _bounty: uint256, _recipient: ad
     assert msg.sender == self.management
     assert _expiration > 1
     assert _bounty <= BOUNTY_PRECISION
-    assert _recipient != empty(address) or _bounty == 0
+    assert _recipient != empty(address) or _bounty == BOUNTY_PRECISION
 
     self.reward_expiration = _expiration
     self.reclaim_bounty = _bounty
@@ -322,7 +324,7 @@ def set_reward_expiration(_expiration: uint256, _bounty: uint256, _recipient: ad
 def set_report_bounty(_bounty: uint256, _recipient: address):
     assert msg.sender == self.management
     assert _bounty <= BOUNTY_PRECISION
-    assert _recipient != empty(address) or _bounty == 0
+    assert _recipient != empty(address) or _bounty == BOUNTY_PRECISION
 
     self.report_bounty = _bounty
     self.report_recipient = _recipient
@@ -401,7 +403,7 @@ def _claim(_account: address, _time: uint256) -> uint256:
     # dev: rewards must be synced prior to calling
 
     last_claimed: uint256 = self.last_claimed[_account]
-    if last_claimed == 0 or last_claimed > _time:
+    if last_claimed == 0 or last_claimed >= _time:
         return 0
 
     epoch: uint256 = (last_claimed - genesis) // EPOCH_LENGTH - 1

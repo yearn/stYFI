@@ -135,6 +135,7 @@ def __init__(_genesis: uint256, _token: address):
     self.total_weight_entries[0] = TotalWeight(epoch=0, weight=10**12)
     self.weight_scale = Scale(numerator=4, denominator=1)
     self.reward_expiration = 26
+    self.reclaim_recipient = msg.sender
 
 @external
 @view
@@ -347,7 +348,7 @@ def set_reward_expiration(_expiration: uint256, _bounty: uint256, _recipient: ad
     assert msg.sender == self.management
     assert _expiration > 1
     assert _bounty <= BOUNTY_PRECISION
-    assert _recipient != empty(address) or _bounty == 0
+    assert _recipient != empty(address) or _bounty == BOUNTY_PRECISION
 
     self.reward_expiration = _expiration
     self.reclaim_bounty = _bounty
