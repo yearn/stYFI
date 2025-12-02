@@ -1,0 +1,7 @@
+/.build
+/.hypothesis
+/.vscode
+.pytest_cache
+__pycache__
+.DS_Store
+.python-version
