@@ -287,6 +287,13 @@ def sync_rewards(_idx: uint256, _account: address = empty(address)) -> bool:
 
 @external
 def set_depositor(_previous: address, _depositor: address):
+    """
+    @notice Replace a liquid locker depositor
+    @param _previous Old depositor address
+    @param _depositor New depositor address
+    @dev Can only be called by management
+    @dev Caller is responsible for ensuring consistency between the old and new depositor
+    """
     assert msg.sender == self.management
     number: uint256 = self.depositors[_previous]
     assert number > 0
@@ -298,6 +305,11 @@ def set_depositor(_previous: address, _depositor: address):
 
 @external
 def set_distributor(_distributor: address):
+    """
+    @notice Set upstream reward distributor
+    @param _distributor Distributor address
+    @dev Can only be called by management
+    """
     assert msg.sender == self.management
 
     self.distributor = IDistributor(_distributor)
@@ -305,6 +317,12 @@ def set_distributor(_distributor: address):
 
 @external
 def set_weight_scale(_numerator: uint256, _denominator: uint256):
+    """
+    @notice Set scale by which the total weight is multiplied
+    @param _numerator Numerator
+    @param _denominator Denominator
+    @dev Can only be called by management
+    """
     assert msg.sender == self.management
     assert _numerator > 0 and _denominator > 0
 
@@ -313,6 +331,11 @@ def set_weight_scale(_numerator: uint256, _denominator: uint256):
 
 @external
 def set_unboosted_weights(_weights: uint256[3]):
+    """
+    @notice Set unboosted weight of each liquid locker
+    @param _weights Unboosted weights
+    @dev Can only be called by management
+    """
     assert msg.sender == self.management
 
     epoch: uint256 = 0
@@ -332,6 +355,12 @@ def set_unboosted_weights(_weights: uint256[3]):
 
 @external
 def set_claimer(_account: address, _claimer: bool):
+    """
+    @notice Whitelist account as reward claimer
+    @param _account Account
+    @param _claimer True: add to whitelist, False: remove from whitelist
+    @dev Can only be called by management
+    """
     assert msg.sender == self.management
 
     self.claimers[_account] = _claimer
@@ -339,6 +368,13 @@ def set_claimer(_account: address, _claimer: bool):
 
 @external
 def set_reward_expiration(_expiration: uint256, _bounty: uint256, _recipient: address):
+    """
+    @notice Set reward expiration parameters
+    @param _expiration Number of epochs after which rewards can be reclaimed
+    @param _bounty Bounty (in bps) to give to the caller
+    @param _recipient Recipient of the reclaimed rewards
+    @dev Can only be called by management
+    """
     assert msg.sender == self.management
     assert _expiration > 1
     assert _bounty <= BOUNTY_PRECISION
@@ -380,6 +416,9 @@ def _epoch() -> uint256:
 
 @internal
 def _update_total_staked(_idx: uint256, _amount: uint256, _increment: bool):
+    """
+    @notice Increase/decrease the total staked amount of a liquid locker
+    """
     assert self._sync_rewards()
     assert self._sync_integral(_idx)
 
@@ -400,6 +439,9 @@ def _update_total_staked(_idx: uint256, _amount: uint256, _increment: bool):
 
 @internal
 def _update_staked(_account: address, _idx: uint256, _amount: uint256, _increment: bool):
+    """
+    @notice Increase/decrease the staked amount of a liquid locker of a specific account
+    """
     self._update_total_staked(_idx, _amount, _increment)
     self._sync_account_integral(_idx, _account)
 
@@ -426,6 +468,9 @@ def _update_staked(_account: address, _idx: uint256, _amount: uint256, _incremen
 
 @internal
 def _sync_rewards() -> bool:
+    """
+    @notice Synchronize rewards by repeatedly claiming from the distributor
+    """
     current_epoch: uint256 = self._epoch()
     reward_epoch: uint256 = self.reward_epoch
 
@@ -441,8 +486,10 @@ def _sync_rewards() -> bool:
 
 @internal
 def _sync_integral(_idx: uint256) -> bool:
-    # dev: sync rewards before calling
-
+    """
+    @notice Synchronize integral for a specific liquid locker
+            Rewards must be synced before calling
+    """
     current_epoch: uint256 = self._epoch()
     unlocked: uint256 = 0
     ew: Rewards = self.current_rewards[_idx]
@@ -471,7 +518,7 @@ def _sync_integral(_idx: uint256) -> bool:
             epoch_rewards: uint256 = 0
             for i: uint256 in range(32):
                 epoch += 1
-                epoch_rewards = self.epoch_total_rewards[epoch] * weight // NORM_WEIGHT_PRECISION # TODO: off-by-one?
+                epoch_rewards = self.epoch_total_rewards[epoch] * weight // NORM_WEIGHT_PRECISION
                 synced = epoch == current_epoch
                 if synced:
                     break
@@ -503,8 +550,10 @@ def _sync_integral(_idx: uint256) -> bool:
 
 @internal
 def _sync_account_integral(_idx: uint256, _account: address):
-    # dev: sync integral before calling
-
+    """
+    @notice Synchronize integral for a specific liquid locker and account
+            Global integral must be synced before calling
+    """
     staked: uint256 = self.staked[_idx][_account].amount
     integral: uint256 = self.reward_integral[_idx]
     pending: uint256 = self.pending_rewards[_account]

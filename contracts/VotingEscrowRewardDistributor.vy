@@ -280,7 +280,21 @@ def report(_account: address) -> (uint256, uint256):
     return rewards, bounty
 
 @external
+def sync_rewards() -> bool:
+    """
+    @notice Synchronize global rewards up until now
+    @return True: rewards are fully synced, False: not fully synced
+    """
+    return self._sync_rewards(self._epoch())
+
+@external
 def set_snapshot(_snapshot: address):
+    """
+    @notice Set new snapshot address
+    @param _snapshot Snapshot address
+    @dev Can only be called by management
+    @dev Caller is responsible for ensuring consistency between the old and new snapshot
+    """
     assert msg.sender == self.management
 
     self.snapshot = ISnapshot(_snapshot)
@@ -288,6 +302,11 @@ def set_snapshot(_snapshot: address):
 
 @external
 def set_distributor(_distributor: address):
+    """
+    @notice Set upstream reward distributor
+    @param _distributor Distributor address
+    @dev Can only be called by management
+    """
     assert msg.sender == self.management
 
     self.distributor = IDistributor(_distributor)
@@ -295,6 +314,12 @@ def set_distributor(_distributor: address):
 
 @external
 def set_weight_scale(_numerator: uint256, _denominator: uint256):
+    """
+    @notice Set scale by which the total weight is multiplied
+    @param _numerator Numerator
+    @param _denominator Denominator
+    @dev Can only be called by management
+    """
     assert msg.sender == self.management
     assert _numerator > 0 and _denominator > 0
 
@@ -303,6 +328,12 @@ def set_weight_scale(_numerator: uint256, _denominator: uint256):
 
 @external
 def set_claimer(_account: address, _claimer: bool):
+    """
+    @notice Whitelist account as reward claimer
+    @param _account Account
+    @param _claimer True: add to whitelist, False: remove from whitelist
+    @dev Can only be called by management
+    """
     assert msg.sender == self.management
 
     self.claimers[_account] = _claimer
@@ -310,6 +341,13 @@ def set_claimer(_account: address, _claimer: bool):
 
 @external
 def set_reward_expiration(_expiration: uint256, _bounty: uint256, _recipient: address):
+    """
+    @notice Set reward expiration parameters
+    @param _expiration Number of epochs after which rewards can be reclaimed
+    @param _bounty Bounty (in bps) to give to the caller
+    @param _recipient Recipient of the reclaimed rewards
+    @dev Can only be called by management
+    """
     assert msg.sender == self.management
     assert _expiration > 1
     assert _bounty <= BOUNTY_PRECISION
@@ -322,6 +360,12 @@ def set_reward_expiration(_expiration: uint256, _bounty: uint256, _recipient: ad
 
 @external
 def set_report_bounty(_bounty: uint256, _recipient: address):
+    """
+    @notice Set report bounty parameters
+    @param _bounty Bounty (in bps) to give to the caller
+    @param _recipient Recipient of the reclaimed rewards
+    @dev Can only be called by management
+    """
     assert msg.sender == self.management
     assert _bounty <= BOUNTY_PRECISION
     assert _recipient != empty(address) or _bounty == BOUNTY_PRECISION
@@ -361,6 +405,10 @@ def _epoch() -> uint256:
 
 @internal
 def _sync_total_weights(_current: uint256) -> bool:
+    """
+    @notice Compute total weights by consecutively applying the slope to the weight, 
+            followed by applying the unlock to the weight and slope
+    """
     last: uint256 = self.last_epoch
     if last == _current:
         return True
@@ -384,6 +432,9 @@ def _sync_total_weights(_current: uint256) -> bool:
 
 @internal
 def _sync_rewards(_current: uint256) -> bool:
+    """
+    @notice Sync epoch by epoch rewards by claiming from the distributor
+    """
     epoch: uint256 = self.reward_epoch
     if epoch == _current:
         return True
@@ -400,8 +451,10 @@ def _sync_rewards(_current: uint256) -> bool:
 
 @internal
 def _claim(_account: address, _time: uint256) -> uint256:
-    # dev: rewards must be synced prior to calling
-
+    """
+    @notice Claim rewards for single account up until a specific timestamp.
+            Rewards must be synced prior to calling
+    """
     last_claimed: uint256 = self.last_claimed[_account]
     if last_claimed == 0 or last_claimed >= _time:
         return 0

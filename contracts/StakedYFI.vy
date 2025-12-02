@@ -441,7 +441,7 @@ def _withdraw(_owner: address, _value: uint256, _receiver: address):
 
         claimable = total * claimable // STREAM_DURATION
         # if instant withdrawability has changed, `claimed` could be larger than `claimable`
-        claimable = claimable - min(claimed, claimable) # TODO: think about this some more
+        claimable = claimable - min(claimed, claimable)
 
     if instant and _value > claimable:
         # the existing stream is not enough to cover the instant withdrawal, attempt to unstake

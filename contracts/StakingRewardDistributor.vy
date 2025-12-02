@@ -316,6 +316,12 @@ def weight_snapshot(_account: address) -> Weight:
 
 @external
 def set_depositor(_depositor: address):
+    """
+    @notice Set the depositor
+    @param _depositor Depositor address
+    @dev Can only be called by management
+    @dev Caller is responsible for ensuring consistency between the old and new depositor
+    """
     assert msg.sender == self.management
 
     self.depositor = _depositor
@@ -323,6 +329,11 @@ def set_depositor(_depositor: address):
 
 @external
 def set_distributor(_distributor: address):
+    """
+    @notice Set upstream reward distributor
+    @param _distributor Distributor address
+    @dev Can only be called by management
+    """
     assert msg.sender == self.management
 
     self.distributor = IDistributor(_distributor)
@@ -330,6 +341,12 @@ def set_distributor(_distributor: address):
 
 @external
 def set_weight_scale(_numerator: uint256, _denominator: uint256):
+    """
+    @notice Set scale by which the total weight is multiplied
+    @param _numerator Numerator
+    @param _denominator Denominator
+    @dev Can only be called by management
+    """
     assert msg.sender == self.management
     assert _numerator > 0 and _denominator > 0
 
@@ -338,6 +355,12 @@ def set_weight_scale(_numerator: uint256, _denominator: uint256):
 
 @external
 def set_claimer(_account: address, _claimer: bool):
+    """
+    @notice Whitelist account as reward claimer
+    @param _account Account
+    @param _claimer True: add to whitelist, False: remove from whitelist
+    @dev Can only be called by management
+    """
     assert msg.sender == self.management
 
     self.claimers[_account] = _claimer
@@ -345,6 +368,13 @@ def set_claimer(_account: address, _claimer: bool):
 
 @external
 def set_reward_expiration(_expiration: uint256, _bounty: uint256, _recipient: address):
+    """
+    @notice Set reward expiration parameters
+    @param _expiration Number of epochs after which rewards can be reclaimed
+    @param _bounty Bounty (in bps) to give to the caller
+    @param _recipient Recipient of the reclaimed rewards
+    @dev Can only be called by management
+    """
     assert msg.sender == self.management
     assert _expiration > 1
     assert _bounty <= BOUNTY_PRECISION

@@ -188,6 +188,11 @@ def transfer(_token: address, _amount: uint256 = max_value(uint256)):
 
 @external
 def set_liquid_locker_recipient(_recipient: address):
+    """
+    @notice Set recipient of redeemed liquid locker tokens
+    @param _recipient Recipient address. If set to zero the tokens are kept inside the contract
+    @dev Can only be called by management
+    """
     assert msg.sender == self.management
 
     self.liquid_locker_recipient = _recipient
@@ -195,6 +200,11 @@ def set_liquid_locker_recipient(_recipient: address):
 
 @external
 def set_yfi_recipient(_recipient: address):
+    """
+    @notice Set recipient of received YFI tokens
+    @param _recipient Recipient address. If set to zero the tokens are kept inside the contract
+    @dev Can only be called by management
+    """
     assert msg.sender == self.management
 
     self.yfi_recipient = _recipient
@@ -202,6 +212,12 @@ def set_yfi_recipient(_recipient: address):
 
 @external
 def set_capacity(_idx: uint256, _capacity: uint256):
+    """
+    @notice Set maximum capacity of a specific liquid locker
+    @param _idx Index of the liquid locker
+    @param _capacity Maximum capacity
+    @dev Can only be called by management
+    """
     assert msg.sender == self.management
 
     self.capacities[_idx] = _capacity
@@ -209,6 +225,12 @@ def set_capacity(_idx: uint256, _capacity: uint256):
 
 @external
 def set_enabled(_idx: uint256, _enabled: bool):
+    """
+    @notice Enable/disable redemption of a specific liquid locker
+    @param _idx Index of the liquid locker
+    @param _enabled True: enable, False: disable
+    @dev Can only be called by management
+    """
     assert msg.sender == self.management
 
     self.enabled[_idx] = _enabled

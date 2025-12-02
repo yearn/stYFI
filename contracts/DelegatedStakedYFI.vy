@@ -337,6 +337,9 @@ def accept_management():
 
 @internal
 def _transfer(_from: address, _to: address, _value: uint256):
+    """
+    @notice Transfer vault shares from one owner to another
+    """
     assert _to != empty(address) and _to != self
 
     self.balanceOf[_from] -= _value
@@ -348,6 +351,9 @@ def _transfer(_from: address, _to: address, _value: uint256):
 
 @internal
 def _stake(_receiver: address, _value: uint256):
+    """
+    @notice Mint shares, take underlying tokens from caller and deposit into staking contract
+    """
     assert _receiver != empty(address) and _receiver != self
 
     self.totalSupply += _value
@@ -362,6 +368,9 @@ def _stake(_receiver: address, _value: uint256):
 
 @internal
 def _unstake(_owner: address, _value: uint256):
+    """
+    @notice Burn shares, withdraw from staking contract and create/update the stream
+    """
     self.totalSupply -= _value
     self.balanceOf[_owner] -= _value
 

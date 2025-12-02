@@ -147,6 +147,12 @@ def claim(_account: address) -> uint256:
 
 @external
 def set_depositor(_depositor: address):
+    """
+    @notice Set the depositor
+    @param _depositor Depositor address
+    @dev Can only be called by management
+    @dev Caller is responsible for ensuring consistency between the old and new depositor
+    """
     assert msg.sender == self.management
 
     self.depositor = _depositor
@@ -154,6 +160,11 @@ def set_depositor(_depositor: address):
 
 @external
 def set_distributor(_distributor: address):
+    """
+    @notice Set upstream staking reward distributor
+    @param _distributor Distributor address
+    @dev Can only be called by management
+    """
     assert msg.sender == self.management
 
     self.distributor = IDistributor(_distributor)
@@ -161,6 +172,12 @@ def set_distributor(_distributor: address):
 
 @external
 def set_distributor_claim(_claim: address):
+    """
+    @notice Set address to claim rewards for. Should normally be set to the depositor,
+            unless middleware has been injected
+    @param _claim The address to claim rewards on behalf of
+    @dev Can only be called by management
+    """
     assert msg.sender == self.management
 
     self.distributor_claim = _claim
@@ -168,6 +185,12 @@ def set_distributor_claim(_claim: address):
 
 @external
 def set_claimer(_account: address, _claimer: bool):
+    """
+    @notice Whitelist account as reward claimer
+    @param _account Account
+    @param _claimer True: add to whitelist, False: remove from whitelist
+    @dev Can only be called by management
+    """
     assert msg.sender == self.management
 
     self.claimers[_account] = _claimer
@@ -199,6 +222,9 @@ def accept_management():
 
 @internal
 def _sync_integral():
+    """
+    @notice Claim rewards and update integral
+    """
     total_weight: uint256 = self.total_weight
     if total_weight < 10**12:
         # rewards only accrue when there are depositors
@@ -210,6 +236,10 @@ def _sync_integral():
 
 @internal
 def _sync_account_integral(_account: address) -> uint256:
+    """
+    @notice Sync integral for a specific account
+            Global integral should be synced prior to calling this
+    """
     weight: uint256 = self.weights[_account]
     integral: uint256 = self.reward_integral
     pending: uint256 = self.pending_rewards[_account]
