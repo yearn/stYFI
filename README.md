@@ -49,6 +49,41 @@ The components that will be added at launch are:
 - VotingEscrowRewardDistributor
 - DelegatedStakingRewardDistributor
 
+## Call flowchart
+```mermaid
+flowchart TD
+    U[User]
+    A[RewardDistributor]
+    B[StakingRewardDistributor]
+    D[VotingEscrowRewardDistributor]
+    C[LiquidLockerRewardDistributor]
+    
+    E[stYFI] -->|"on state change"| B
+    G[stYFI+] --> E
+    F[stLL] --> |"on state change"| C
+    
+    G --> |"on state change"| H[DelegatedStakingRewardDistributor]
+    H --> |"claim"| B
+    
+    Y[Yearn] --> |"deposit rewards"|A
+    
+    B --> |"claim"| A
+    D --> |"claim"| A
+    C --> |"claim"| A
+    
+    I["RewardClaimer"]
+    I --> |"claim"| B
+    I --> |"claim"| D
+    I --> |"claim"| C
+    I --> |"claim"| H
+    U --> |"claim rewards"| I
+    
+    U --> |"stake"| E
+    U --> |"stake"| G
+    U --> |"stake"| F
+    
+```
+
 ## Usage
 
 ### Install dependencies
