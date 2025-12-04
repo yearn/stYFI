@@ -48,6 +48,7 @@ def __init__(_token: address):
     @param _token Reward token address
     """
     token = IERC20(_token)
+    self.management = msg.sender
 
 @external
 def claim(_recipient: address = msg.sender) -> uint256:

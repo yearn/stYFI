@@ -302,6 +302,16 @@ def previewRedeem(_shares: uint256) -> uint256:
     return _shares
 
 @external
+@view
+def streams(_account: address) -> (uint256, uint256, uint256):
+    """
+    @notice Get a user's stream details
+    @param _account User address
+    @return Tuple with stream start time, stream amount, claimed amount
+    """
+    return self._unpack(self.packed_streams[_account])
+
+@external
 def set_hooks(_hooks: address):
     """
     @notice Set the hooks address

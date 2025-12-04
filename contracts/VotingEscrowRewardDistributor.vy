@@ -253,7 +253,7 @@ def report(_account: address) -> (uint256, uint256):
 
     # must have early exited
     assert epoch < unlock_epoch
-    snapshot: Lock = staticcall self.snapshot.locked(msg.sender)
+    snapshot: Lock = staticcall self.snapshot.locked(_account)
     assert snapshot.amount == 0
 
     # claim all rewards up until end of this epoch

@@ -29,6 +29,13 @@ def ll_distributor(project, deployer, reward, distributor, genesis, depositors):
     distributor.add_component(llrd, COMPONENTS_SENTINEL, sender=deployer)
     return llrd
 
+@fixture
+def claimer(project, deployer, reward, ll_distributor):
+    claimer = project.RewardClaimer.deploy(reward, sender=deployer)
+    claimer.add_component(ll_distributor, sender=deployer)
+    ll_distributor.set_claimer(claimer, True, sender=deployer)
+    return claimer
+
 @mark.parametrize("idx", [0, 1, 2])
 def test_deposit(chain, alice, ll_tokens, depositors, ll_distributor, idx):
     token = ll_tokens[idx]
@@ -68,7 +75,7 @@ def test_deposit(chain, alice, ll_tokens, depositors, ll_distributor, idx):
     assert ll_distributor.previous_total_staked(idx).amount == DUST + 3 * UNIT
 
 @mark.parametrize("idx", [0, 1, 2])
-def test_rewards(chain, alice, bob, reward, distributor, genesis, ll_tokens, depositors, ll_distributor, idx):
+def test_rewards(chain, alice, bob, charlie, reward, distributor, genesis, ll_tokens, depositors, ll_distributor, claimer, idx):
     token = ll_tokens[idx]
     depositor = depositors[idx]
     dust = SCALES[idx] * DUST
@@ -94,6 +101,7 @@ def test_rewards(chain, alice, bob, reward, distributor, genesis, ll_tokens, dep
     ts = genesis + EPOCH_LENGTH * 3 // 2
     chain.pending_timestamp = ts
     depositor.deposit(dust, sender=alice)
+    chain.pending_timestamp = ts
     depositor.deposit(dust, bob, sender=alice)
     
     epoch_rewards = UNIT * SHARES[idx] // sum(SHARES)
@@ -105,6 +113,12 @@ def test_rewards(chain, alice, bob, reward, distributor, genesis, ll_tokens, dep
     assert ll_distributor.reward_integral(idx) == integral
     assert ll_distributor.account_reward_integral(idx, alice) == integral
     assert ll_distributor.pending_rewards(alice) == epoch_rewards // 4
+
+    with chain.isolate():
+        # rewards can be claimed through the RewardClaimer
+        chain.pending_timestamp = ts
+        assert claimer.claim(charlie, sender=alice).return_value == epoch_rewards // 4
+        assert reward.balanceOf(charlie) == epoch_rewards // 4
 
     # fast forward to end of epoch
     chain.pending_timestamp = genesis + 2 * EPOCH_LENGTH
