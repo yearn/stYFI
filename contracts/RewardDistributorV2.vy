@@ -24,7 +24,10 @@ interface IConfigHub:
     def is_blacklisted(_account: address) -> bool: view
     def num_components() -> uint256: view
     def is_component_enabled(_component_id: uint256) -> bool: view
+    def get_weight_scale(_component_id: uint256) -> (uint256, uint256): view
+    def get_component_params(_component_id: uint256) -> (uint256, uint256): view
     def get_reclaim_params() -> (uint256, uint256, address): view
+    def get_report_params() -> (uint256, address): view
 
 interface IReporter:
     def compute_weight(_account: address, _user_data: uint256, _epoch: uint256) -> uint256: view
@@ -168,12 +171,10 @@ def report_account_state(_component_id: uint256, _account: address, _user_data: 
     assert self._sync_integral()
     self._sync_account_integral(_account)
 
-    reporter: IReporter = IReporter(self.component_reporter[_component_id])
-
     old_weight: uint256 = self.account_weight[_component_id][_account]
     self.account_user_data[_component_id][_account] = _user_data
 
-    new_weight: uint256 = staticcall reporter.compute_weight(_account, _user_data, current_epoch)
+    new_weight: uint256 = self._compute_weight(_component_id, _account, _user_data, current_epoch)
     self.account_weight[_component_id][_account] = new_weight
 
     # Update totals
@@ -204,8 +205,6 @@ def report_account_state_batch(
     assert self._sync(current_epoch)
     assert self._sync_integral()
 
-    reporter: IReporter = IReporter(self.component_reporter[_component_id])
-
     for i: uint256 in range(MAX_BATCH_SIZE):
         if i >= len(_accounts):
             break
@@ -216,7 +215,7 @@ def report_account_state_batch(
 
         old_weight: uint256 = self.account_weight[_component_id][account]
         self.account_user_data[_component_id][account] = data
-        new_weight: uint256 = staticcall reporter.compute_weight(account, data, current_epoch)
+        new_weight: uint256 = self._compute_weight(_component_id, account, data, current_epoch)
 
         self.account_weight[_component_id][account] = new_weight
         self.account_total_weight[account] = self.account_total_weight[account] - old_weight + new_weight
@@ -340,6 +339,23 @@ def _sync_integral() -> bool:
 
 
 @internal
+@view
+def _compute_weight(_component_id: uint256, _account: address, _user_data: uint256, _epoch: uint256) -> uint256:
+    """
+    @notice Compute weight via reporter callback and apply config scale
+    """
+    reporter: IReporter = IReporter(self.component_reporter[_component_id])
+    raw_weight: uint256 = staticcall reporter.compute_weight(_account, _user_data, _epoch)
+
+    num: uint256 = 0
+    den: uint256 = 0
+    num, den = staticcall config_hub.get_weight_scale(_component_id)
+    if den == 0:
+        return raw_weight
+    return raw_weight * num // den
+
+
+@internal
 def _sync_account_integral(_account: address) -> uint256:
     weight: uint256 = self.account_total_weight[_account]
     integral: uint256 = self.reward_integral_global
@@ -353,6 +369,34 @@ def _sync_account_integral(_account: address) -> uint256:
     return pending
 
 
+@internal
+def _refresh_account_weights(_account: address, _epoch: uint256):
+    """
+    @notice Recompute all component weights for an account using reporter callbacks.
+    """
+    num_components: uint256 = staticcall config_hub.num_components()
+
+    for cid: uint256 in range(MAX_COMPONENTS):
+        if cid >= num_components:
+            break
+        if not staticcall config_hub.is_component_enabled(cid):
+            continue
+
+        old_weight: uint256 = self.account_weight[cid][_account]
+        data: uint256 = self.account_user_data[cid][_account]
+        if data == 0 and old_weight == 0:
+            continue
+
+        new_weight: uint256 = self._compute_weight(cid, _account, data, _epoch)
+        if new_weight == old_weight:
+            continue
+
+        self.account_weight[cid][_account] = new_weight
+        self.account_total_weight[_account] = self.account_total_weight[_account] - old_weight + new_weight
+        self.component_total_weight[cid] = self.component_total_weight[cid] - old_weight + new_weight
+        self.epoch_total_weight[_epoch] = self.epoch_total_weight[_epoch] - old_weight + new_weight
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # CLAIM / RECLAIM
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -363,6 +407,7 @@ def claim(_recipient: address = msg.sender) -> uint256:
     assert not staticcall config_hub.is_blacklisted(account), "blacklisted"
 
     assert self._sync(self._epoch())
+    self._refresh_account_weights(account, self._epoch())
     assert self._sync_integral()
     pending: uint256 = self._sync_account_integral(account)
 
@@ -379,6 +424,7 @@ def claim(_recipient: address = msg.sender) -> uint256:
 @external
 def reclaim(_account: address) -> (uint256, uint256):
     assert self._sync(self._epoch())
+    self._refresh_account_weights(_account, self._epoch())
     assert self._sync_integral()
 
     weight: uint256 = self.account_total_weight[_account]
@@ -417,6 +463,45 @@ def reclaim(_account: address) -> (uint256, uint256):
         assert extcall token.transfer(recipient, remainder, default_return_value=True)
 
     return rewards, bounty
+
+
+@external
+def report(_component_id: uint256, _account: address) -> (uint256, uint256):
+    """
+    @notice Report an account for a component (e.g., early exit) and redistribute pending
+    @return (total redistributed, bounty)
+    """
+    assert self._sync(self._epoch())
+    self._refresh_account_weights(_account, self._epoch())
+    assert self._sync_integral()
+
+    pending: uint256 = self._sync_account_integral(_account)
+
+    weight: uint256 = self.account_weight[_component_id][_account]
+    if weight == 0:
+        return 0, 0
+
+    self.account_weight[_component_id][_account] = 0
+    self.account_total_weight[_account] -= weight
+    self.component_total_weight[_component_id] -= weight
+    self.epoch_total_weight[self._epoch()] -= weight
+
+    bounty_bps: uint256 = 0
+    recipient: address = empty(address)
+    bounty_bps, recipient = staticcall config_hub.get_report_params()
+
+    bounty: uint256 = pending * bounty_bps // BOUNTY_PRECISION
+    remainder: uint256 = pending - bounty
+
+    if pending > 0:
+        self.pending_rewards[_account] = 0
+
+    if bounty > 0:
+        assert extcall token.transfer(msg.sender, bounty, default_return_value=True)
+    if remainder > 0:
+        assert extcall token.transfer(recipient, remainder, default_return_value=True)
+
+    return pending, bounty
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

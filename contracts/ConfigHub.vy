@@ -19,21 +19,14 @@ struct Scale:
 
 struct ComponentConfig:
     enabled: bool
-    component_type: uint8      # STAKING=1, DELEGATED=2, LL=3, VEYFI=4
     weight_scale: Scale        # (0,0) = use global
-    boost_param1: uint256      # Type-specific: ramp_length / boost_duration / max_lock_epochs
-    boost_param2: uint256      # Reserved for future use
+    param1: uint256            # generic param slot
+    param2: uint256            # generic param slot
 
 # Constants
 EPOCH_LENGTH: constant(uint256) = 14 * 24 * 60 * 60
 MAX_NUM_COMPONENTS: constant(uint256) = 32
 BOUNTY_PRECISION: constant(uint256) = 10_000
-
-# Component types
-COMPONENT_STAKING: constant(uint8) = 1
-COMPONENT_DELEGATED: constant(uint8) = 2
-COMPONENT_LL: constant(uint8) = 3
-COMPONENT_VEYFI: constant(uint8) = 4
 
 # Immutables
 genesis: public(immutable(uint256))
@@ -84,7 +77,8 @@ event SetReportParams:
 
 event AddComponent:
     component_id: indexed(uint256)
-    component_type: uint8
+    param1: uint256
+    param2: uint256
 
 event UpdateComponentEnabled:
     component_id: indexed(uint256)
@@ -95,7 +89,7 @@ event SetComponentWeightScale:
     numerator: uint256
     denominator: uint256
 
-event SetComponentBoostParams:
+event SetComponentParams:
     component_id: indexed(uint256)
     param1: uint256
     param2: uint256
@@ -218,6 +212,18 @@ def get_component_config(_component_id: uint256) -> ComponentConfig:
     @return ComponentConfig struct
     """
     return self.component_config[_component_id]
+
+
+@external
+@view
+def get_component_params(_component_id: uint256) -> (uint256, uint256):
+    """
+    @notice Get generic params for a component
+    @param _component_id Component ID
+    @return Tuple (param1, param2)
+    """
+    config: ComponentConfig = self.component_config[_component_id]
+    return config.param1, config.param2
 
 
 @external
@@ -350,30 +356,27 @@ def set_report_params(_bounty: uint256, _recipient: address):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @external
-def add_component(_component_type: uint8, _boost_param1: uint256, _boost_param2: uint256) -> uint256:
+def add_component(_param1: uint256 = 0, _param2: uint256 = 0) -> uint256:
     """
     @notice Register a new component
-    @param _component_type Type of component (1=STAKING, 2=DELEGATED, 3=LL, 4=VEYFI)
-    @param _boost_param1 Primary boost parameter (type-specific)
-    @param _boost_param2 Secondary boost parameter (reserved)
+    @param _param1 Generic parameter (optional)
+    @param _param2 Generic parameter (optional)
     @return The assigned component ID
     """
     assert msg.sender == self.management
-    assert _component_type >= COMPONENT_STAKING and _component_type <= COMPONENT_VEYFI
 
     num: uint256 = self.num_components
     assert num < MAX_NUM_COMPONENTS
 
     self.component_config[num] = ComponentConfig(
         enabled=True,
-        component_type=_component_type,
         weight_scale=Scale(numerator=0, denominator=0),  # Use global by default
-        boost_param1=_boost_param1,
-        boost_param2=_boost_param2
+        param1=_param1,
+        param2=_param2
     )
     self.num_components = num + 1
 
-    log AddComponent(component_id=num, component_type=_component_type)
+    log AddComponent(component_id=num, param1=_param1, param2=_param2)
     return num
 
 
@@ -411,16 +414,16 @@ def set_component_weight_scale(_component_id: uint256, _numerator: uint256, _den
 
 
 @external
-def set_component_boost_params(_component_id: uint256, _param1: uint256, _param2: uint256):
+def set_component_params(_component_id: uint256, _param1: uint256, _param2: uint256):
     """
-    @notice Set component boost parameters
+    @notice Set generic component parameters
     @param _component_id Component ID
-    @param _param1 Primary boost parameter
-    @param _param2 Secondary boost parameter
+    @param _param1 Generic parameter
+    @param _param2 Generic parameter
     """
     assert msg.sender == self.management
     assert _component_id < self.num_components
 
-    self.component_config[_component_id].boost_param1 = _param1
-    self.component_config[_component_id].boost_param2 = _param2
-    log SetComponentBoostParams(component_id=_component_id, param1=_param1, param2=_param2)
+    self.component_config[_component_id].param1 = _param1
+    self.component_config[_component_id].param2 = _param2
+    log SetComponentParams(component_id=_component_id, param1=_param1, param2=_param2)
