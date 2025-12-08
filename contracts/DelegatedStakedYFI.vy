@@ -35,8 +35,8 @@ allowance: public(HashMap[address, HashMap[address, uint256]])
 packed_streams: public(HashMap[address, uint256]) # time | total | claimed
 
 decimals: public(constant(uint8)) = 18
-name: public(constant(String[20])) = "Delegated Staked YFI"
-symbol: public(constant(String[6])) = "stYFI+"
+name: public(constant(String[14])) = "Staked YFI Max"
+symbol: public(constant(String[6])) = "stYFIx"
 
 event Transfer:
     sender: indexed(address)

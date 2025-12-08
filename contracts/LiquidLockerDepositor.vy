@@ -35,8 +35,8 @@ allowance: public(HashMap[address, HashMap[address, uint256]])
 packed_streams: public(HashMap[address, uint256]) # time | total | claimed
 
 decimals: public(constant(uint8)) = 18
-name: public(String[16])
-symbol: public(String[9])
+name: public(String[28])
+symbol: public(String[10])
 
 event Transfer:
     sender: indexed(address)
@@ -86,8 +86,8 @@ def __init__(_asset: address, _scale: uint256, _name: String[10], _symbol: Strin
     """
     asset = _asset
     scale = _scale
-    self.name = concat(_name, " LLYFI")
-    self.symbol = concat(_symbol, "LLYFI")
+    self.name = concat(_name, " Liquid Locker YFI")
+    self.symbol = concat("llYFI-", _symbol)
     self.management = msg.sender
 
 @external
