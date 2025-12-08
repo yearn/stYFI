@@ -85,7 +85,7 @@ event SetDepositor:
     depositor: address
 
 event SetDistributor:
-    distributor: address
+    distributor: indexed(address)
 
 event SetWeightScale:
     numerator: uint256
@@ -95,7 +95,7 @@ event SetUnboostedWeights:
     weights: uint256[3]
 
 event SetClaimer:
-    account: address
+    account: indexed(address)
     claimer: bool
 
 event SetRewardExpiration:

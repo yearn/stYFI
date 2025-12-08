@@ -42,19 +42,19 @@ event FinalizeEpoch:
     rewards: uint256
 
 event AddRewards:
-    depositor: address
+    depositor: indexed(address)
     epoch: uint256
     rewards: uint256
 
 event SetPull:
-    pull: address
+    pull: indexed(address)
 
 event AddComponent:
-    component: address
+    component: indexed(address)
     after: address
 
 event RemoveComponent:
-    component: address
+    component: indexed(address)
 
 event PendingManagement:
     management: indexed(address)

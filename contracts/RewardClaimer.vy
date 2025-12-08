@@ -24,14 +24,14 @@ event Claim:
     rewards: uint256
 
 event AddComponent:
-    component: address
+    component: indexed(address)
 
 event ReplaceComponent:
     idx: uint256
-    component: address
+    component: indexed(address)
 
 event RemoveComponent:
-    component: address
+    component: indexed(address)
 
 event PendingManagement:
     management: indexed(address)

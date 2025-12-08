@@ -45,10 +45,10 @@ event SetEnabled:
     enabled: bool
 
 event SetLiquidLockerRecipient:
-    recipient: address
+    recipient: indexed(address)
 
 event SetYfiRecipient:
-    recipient: address
+    recipient: indexed(address)
 
 event PendingManagement:
     management: indexed(address)

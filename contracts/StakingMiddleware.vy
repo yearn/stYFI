@@ -27,7 +27,7 @@ instant_withdrawal: public(HashMap[address, bool])
 blacklist: public(HashMap[address, bool])
 
 event SetInstantWithdrawal:
-    account: address
+    account: indexed(address)
     instant: bool
 
 event SetBlacklist:

@@ -62,7 +62,7 @@ event Withdraw:
     shares: uint256
 
 event SetHooks:
-    hooks: address
+    hooks: indexed(address)
 
 event PendingManagement:
     management: indexed(address)

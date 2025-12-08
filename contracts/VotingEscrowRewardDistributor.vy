@@ -88,17 +88,17 @@ event Report:
     bounty: uint256
 
 event SetSnapshot:
-    snapshot: address
+    snapshot: indexed(address)
 
 event SetDistributor:
-    distributor: address
+    distributor: indexed(address)
 
 event SetWeightScale:
     numerator: uint256
     denominator: uint256
 
 event SetClaimer:
-    account: address
+    account: indexed(address)
     claimer: bool
 
 event SetRewardExpiration:
