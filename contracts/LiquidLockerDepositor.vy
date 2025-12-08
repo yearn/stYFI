@@ -115,7 +115,7 @@ def deposit(_assets: uint256, _receiver: address = msg.sender) -> uint256:
     """
     self._stake(_receiver, _assets // scale)
     assert extcall IERC20(asset).transferFrom(msg.sender, self, _assets, default_return_value=True)
-    return _assets
+    return _assets // scale
 
 @external
 def mint(_shares: uint256, _receiver: address = msg.sender) -> uint256:
@@ -127,7 +127,7 @@ def mint(_shares: uint256, _receiver: address = msg.sender) -> uint256:
     """
     self._stake(_receiver, _shares)
     assert extcall IERC20(asset).transferFrom(msg.sender, self, _shares * scale, default_return_value=True)
-    return _shares
+    return _shares * scale
 
 @external
 def unstake(_shares: uint256):
@@ -162,7 +162,7 @@ def withdraw(_assets: uint256, _receiver: address = msg.sender, _owner: address 
     @dev Requires unstaking before assets become withdrawable in a stream
     """
     self._redeem(_owner, _assets // scale, _receiver)
-    return _assets
+    return _assets // scale
 
 @external
 def redeem(_shares: uint256, _receiver: address = msg.sender, _owner: address = msg.sender) -> uint256:
@@ -175,7 +175,7 @@ def redeem(_shares: uint256, _receiver: address = msg.sender, _owner: address = 
     @dev Requires unstaking before assets become withdrawable in a stream
     """
     self._redeem(_owner, _shares, _receiver)
-    return _shares
+    return _shares * scale
 
 @view
 @external
@@ -234,7 +234,7 @@ def maxMint(_owner: address) -> uint256:
     @param _owner User minting
     @return Maximum amount of shares that can be minted
     """
-    return max_value(uint256)
+    return max_value(uint256) // scale
 
 @view
 @external
@@ -264,7 +264,7 @@ def previewWithdraw(_assets: uint256) -> uint256:
     @param _assets Amount of assets to be withdrawn
     @return Equivalent amount of shares to be burned
     """
-    return _assets
+    return _assets // scale
 
 @view
 @external
@@ -284,7 +284,7 @@ def previewRedeem(_shares: uint256) -> uint256:
     @param _shares Amount of shares to be redeemed
     @return Equivalent amount of assets to be withdrawn
     """
-    return _shares
+    return _shares * scale
 
 @external
 @view
