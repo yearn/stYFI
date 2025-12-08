@@ -450,7 +450,7 @@ def _withdraw(_owner: address, _value: uint256, _receiver: address):
 
     assert extcall IERC20(asset).transfer(_receiver, _value, default_return_value=True)
 
-    log Withdraw(sender=_owner, receiver=_receiver, owner=_owner, assets=_value, shares=_value)
+    log Withdraw(sender=msg.sender, receiver=_receiver, owner=_owner, assets=_value, shares=_value)
 
 @internal
 @pure

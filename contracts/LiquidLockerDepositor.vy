@@ -390,7 +390,7 @@ def _redeem(_owner: address, _shares: uint256, _receiver: address):
 
     assert extcall IERC20(asset).transfer(_receiver, _shares * scale, default_return_value=True)
 
-    log Withdraw(sender=_owner, receiver=_receiver, owner=_owner, assets=_shares * scale, shares=_shares)
+    log Withdraw(sender=msg.sender, receiver=_receiver, owner=_owner, assets=_shares * scale, shares=_shares)
 
 @internal
 @pure
