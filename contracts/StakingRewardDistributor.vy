@@ -326,7 +326,7 @@ def set_depositor(_depositor: address):
     assert msg.sender == self.management
 
     self.depositor = _depositor
-    log SetDepositor(_depositor)
+    log SetDepositor(depositor=_depositor)
 
 @external
 def set_distributor(_distributor: address):
@@ -338,7 +338,7 @@ def set_distributor(_distributor: address):
     assert msg.sender == self.management
 
     self.distributor = IDistributor(_distributor)
-    log SetDistributor(_distributor)
+    log SetDistributor(distributor=_distributor)
 
 @external
 def set_weight_scale(_numerator: uint256, _denominator: uint256):
