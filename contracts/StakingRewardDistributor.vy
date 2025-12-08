@@ -449,6 +449,9 @@ def _update_weight(_account: address, _amount: uint256, _increment: bool):
     """
     self._sync_account_integral(_account)
 
+    if _amount == 0:
+        return
+
     current_epoch: uint256 = self._epoch()
     epoch: uint256 = 0
     time: uint256 = 0
