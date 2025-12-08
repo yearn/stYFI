@@ -95,8 +95,6 @@ def transfer(_to: address, _value: uint256) -> bool:
     @return Always True
     @dev Reverts if caller does not have at least `_value` tokens
     """
-    assert _to != empty(address) and _to != self
-
     self._transfer(msg.sender, _to, _value)
 
     return True
@@ -112,8 +110,6 @@ def transferFrom(_from: address, _to: address, _value: uint256) -> bool:
     @dev Reverts if `_from` does not have at least `_value` tokens, or if caller
          does not have at least `_value` allowance to spend from `_from`
     """
-    assert _to != empty(address) and _to != self
-    
     if _value > 0:
         allowance: uint256 = self.allowance[_from][msg.sender]
         if allowance < max_value(uint256):
