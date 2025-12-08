@@ -280,10 +280,11 @@ def reclaim(_account: address) -> (uint256, uint256):
 
     rewards: uint256 = (integral - account_integral) * weight // PRECISION
     self.account_reward_integral[_account] = integral
+    if rewards == 0:
+        return 0, 0
 
     bounty: uint256 = rewards * self.reclaim_bounty // BOUNTY_PRECISION
-    if rewards > 0:
-        log Reclaim(caller=msg.sender, account=_account, rewards=rewards, bounty=bounty)
+    log Reclaim(caller=msg.sender, account=_account, rewards=rewards, bounty=bounty)
 
     if bounty > 0:
         rewards -= bounty

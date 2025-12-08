@@ -223,9 +223,11 @@ def reclaim(_account: address) -> (uint256, uint256):
     assert self._sync_rewards(self._epoch())
 
     rewards: uint256 = self._claim(_account, block.timestamp - self.reward_expiration * EPOCH_LENGTH)
+    if rewards == 0:
+        return 0, 0
+
     bounty: uint256 = rewards * self.reclaim_bounty // BOUNTY_PRECISION
-    if rewards > 0:
-        log Reclaim(caller=msg.sender, account=_account, rewards=rewards, bounty=bounty)
+    log Reclaim(caller=msg.sender, account=_account, rewards=rewards, bounty=bounty)
 
     if bounty > 0:
         rewards -= bounty

@@ -247,10 +247,11 @@ def reclaim(_idx: uint256, _account: address) -> (uint256, uint256):
 
     rewards: uint256 = (integral - account_integral) * staked // PRECISION
     self.account_reward_integral[_idx][_account] = integral
+    if rewards == 0:
+        return 0, 0
 
     bounty: uint256 = rewards * self.reclaim_bounty // BOUNTY_PRECISION
-    if rewards > 0:
-        log Reclaim(caller=msg.sender, account=_account, idx=_idx, rewards=rewards, bounty=bounty)
+    log Reclaim(caller=msg.sender, account=_account, idx=_idx, rewards=rewards, bounty=bounty)
 
     if bounty > 0:
         rewards -= bounty
