@@ -8,13 +8,13 @@
 @notice Contains a set of snapshotted veYFI locks.
 """
 
-struct Snapshot:
+struct Lock:
     amount: uint256
     boost_epochs: uint256
     unlock_time: uint256
 
 interface ISnapshot:
-    def locked(_account: address) -> Snapshot: view
+    def locked(_account: address) -> Lock: view
 
 interface IVotingEscrow:
     def locked(_account: address) -> (uint256, uint256): view
@@ -24,7 +24,7 @@ implements: ISnapshot
 veyfi: public(immutable(IVotingEscrow))
 management: public(address)
 
-snapshot: public(HashMap[address, Snapshot])
+snapshot: public(HashMap[address, Lock])
 
 event SetSnapshot:
     account: indexed(address)
@@ -48,19 +48,19 @@ def __init__(_veyfi: address):
 
 @external
 @view
-def locked(_account: address) -> Snapshot:
+def locked(_account: address) -> Lock:
     """
     @notice Query snapshotted lock of an account
     @param _account Account to get lock for
     @return Struct containing lock information
     @dev Only returns snapshot if not already exited out of the position in the present
     """
-    snapshot: Snapshot = self.snapshot[_account]
+    snapshot: Lock = self.snapshot[_account]
     amount: uint256 = 0
     end: uint256 = 0
     amount, end = staticcall veyfi.locked(_account)
     if amount < snapshot.amount or end < snapshot.unlock_time:
-        return empty(Snapshot)
+        return empty(Lock)
     return snapshot
 
 @external
@@ -75,7 +75,7 @@ def set_snapshot(_account: address, _amount: uint256, _boost: uint256, _unlock: 
     """
     assert msg.sender == self.management
 
-    self.snapshot[_account] = Snapshot(amount=_amount, boost_epochs=_boost, unlock_time=_unlock)
+    self.snapshot[_account] = Lock(amount=_amount, boost_epochs=_boost, unlock_time=_unlock)
     log SetSnapshot(account=_account, amount=_amount, boost=_boost, unlock=_unlock)
 
 @external
