@@ -136,15 +136,16 @@ def unstake(_shares: uint256):
     @param _shares Amount of shares to unstake
     @dev Adds existing stream to new stream, if applicable
     """
+    assert _shares > 0
+
     self.totalSupply -= _shares
     self.balanceOf[msg.sender] -= _shares
 
-    if _shares > 0:
-        time: uint256 = 0
-        total: uint256 = 0
-        claimed: uint256 = 0
-        time, total, claimed = self._unpack(self.packed_streams[msg.sender])
-        self.packed_streams[msg.sender] = self._pack(block.timestamp, total - claimed + _shares, 0)
+    time: uint256 = 0
+    total: uint256 = 0
+    claimed: uint256 = 0
+    time, total, claimed = self._unpack(self.packed_streams[msg.sender])
+    self.packed_streams[msg.sender] = self._pack(block.timestamp, total - claimed + _shares, 0)
 
     extcall self.hooks.on_unstake(msg.sender, _shares)
 

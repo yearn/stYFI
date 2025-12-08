@@ -382,15 +382,16 @@ def _unstake(_owner: address, _value: uint256):
     """
     @notice Burn shares and create/update the stream
     """
+    assert _value > 0
+
     self.totalSupply -= _value
     self.balanceOf[_owner] -= _value
 
-    if _value > 0:
-        time: uint256 = 0
-        total: uint256 = 0
-        claimed: uint256 = 0
-        time, total, claimed = self._unpack(self.packed_streams[_owner])
-        self.packed_streams[_owner] = self._pack(block.timestamp, total - claimed + _value, 0)
+    time: uint256 = 0
+    total: uint256 = 0
+    claimed: uint256 = 0
+    time, total, claimed = self._unpack(self.packed_streams[_owner])
+    self.packed_streams[_owner] = self._pack(block.timestamp, total - claimed + _value, 0)
 
     extcall self.hooks.on_unstake(_owner, _value)
 
