@@ -150,6 +150,7 @@ def test_rewards(chain, deployer, alice, bob, charlie, reward, yfi, styfi, distr
     ts = genesis + 2 * EPOCH_LENGTH
     chain.pending_timestamp = ts
     styfi_distributor.sync_rewards(alice, sender=alice)
+    chain.pending_timestamp = ts
     styfi_distributor.sync_rewards(bob, sender=alice)
     
     integral += UNIT // 2 * PRECISION // (4 * DUST)

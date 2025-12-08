@@ -86,20 +86,22 @@ def test_unstake_withdraw(chain, deployer, alice, bob, yfi, staking):
     ts = chain.pending_timestamp
     staking.unstake(4 * UNIT, sender=alice)
     assert staking.maxWithdraw(alice) == 0
-    chain.pending_timestamp = ts + STREAM_DURATION // 4
     with chain.isolate():
+        chain.pending_timestamp = ts + STREAM_DURATION // 4
         chain.mine()
         assert staking.maxWithdraw(alice) == UNIT
     with chain.isolate():
+        chain.pending_timestamp = ts + STREAM_DURATION // 4
         staking.withdraw(UNIT, bob, sender=alice)
         assert staking.streams(alice) == (ts, 4 * UNIT, UNIT)
         assert staking.maxWithdraw(alice) == 0
         assert yfi.balanceOf(bob) == UNIT
-    chain.pending_timestamp = ts + STREAM_DURATION // 2
     with chain.isolate():
+        chain.pending_timestamp = ts + STREAM_DURATION // 2
         chain.mine()
         assert staking.maxWithdraw(alice) == 2 * UNIT
     with chain.isolate():
+        chain.pending_timestamp = ts + STREAM_DURATION // 2
         staking.withdraw(2 * UNIT, bob, sender=alice)
         assert staking.streams(alice) == (ts, 4 * UNIT, 2 * UNIT)
         assert staking.maxWithdraw(alice) == 0
