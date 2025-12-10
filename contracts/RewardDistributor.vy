@@ -18,6 +18,12 @@ interface IComponent:
 interface IPull:
     def pull(_epoch: uint256) -> uint256: nonpayable
 
+interface IDistributor:
+    def genesis() -> uint256: view
+    def claim() -> (uint256, uint256, uint256): nonpayable
+
+implements: IDistributor
+
 struct ComponentData:
     epoch: uint256
     next: address
@@ -74,6 +80,7 @@ def __init__(_genesis: uint256, _token: address):
     @param _genesis Genesis timestamp
     @param _token The address of the reward token
     """
+    assert _genesis % EPOCH_LENGTH == 0
     genesis = _genesis
     token = IERC20(_token)
 

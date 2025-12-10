@@ -16,9 +16,8 @@ def snapshot(project, deployer, veyfi):
     return project.VotingEscrowSnapshot.deploy(veyfi, sender=deployer)
 
 @fixture
-def ve_distributor(project, deployer, reward, distributor, genesis, snapshot):
-    vrd = project.VotingEscrowRewardDistributor.deploy(genesis, reward, sender=deployer)
-    vrd.set_distributor(distributor, sender=deployer)
+def ve_distributor(project, deployer, reward, distributor, snapshot):
+    vrd = project.VotingEscrowRewardDistributor.deploy(distributor, reward, sender=deployer)
     vrd.set_snapshot(snapshot, sender=deployer)
     
     distributor.add_component(vrd, COMPONENTS_SENTINEL, sender=deployer)

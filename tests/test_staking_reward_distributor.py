@@ -9,10 +9,9 @@ BIG_MASK = 2**112 - 1
 DUST = 10**12
 
 @fixture
-def styfi_distributor(project, deployer, reward, styfi, distributor, genesis):
-    srd = project.StakingRewardDistributor.deploy(genesis, reward, sender=deployer)
+def styfi_distributor(project, deployer, reward, styfi, distributor):
+    srd = project.StakingRewardDistributor.deploy(distributor, reward, sender=deployer)
     srd.set_depositor(styfi, sender=deployer)
-    srd.set_distributor(distributor, sender=deployer)
     styfi.set_hooks(srd, sender=deployer)
     distributor.add_component(srd, COMPONENTS_SENTINEL, sender=deployer)
 

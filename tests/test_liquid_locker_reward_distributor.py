@@ -18,9 +18,8 @@ def depositors(project, deployer, ll_tokens):
     return [project.LiquidLockerDepositor.deploy(ll_tokens[i], SCALES[i], f"{i}", f"{i}", sender=deployer) for i in range(3)]
 
 @fixture
-def ll_distributor(project, deployer, reward, distributor, genesis, depositors):
-    llrd = project.LiquidLockerRewardDistributor.deploy(genesis, reward, 104, depositors, sender=deployer)
-    llrd.set_distributor(distributor, sender=deployer)
+def ll_distributor(project, deployer, reward, distributor, depositors):
+    llrd = project.LiquidLockerRewardDistributor.deploy(distributor, reward, 104, depositors, sender=deployer)
     llrd.set_unboosted_weights(SHARES, sender=deployer)
     
     for depositor in depositors:

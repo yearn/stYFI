@@ -21,6 +21,7 @@ interface IComponent:
     def sync_total_weight(_epoch: uint256) -> uint256: nonpayable
 
 interface IDistributor:
+    def genesis() -> uint256: view
     def claim() -> (uint256, uint256, uint256): nonpayable
 
 implements: IComponent
@@ -121,17 +122,16 @@ MAX_NUM_EPOCHS: constant(uint256) = 104
 BOUNTY_PRECISION: constant(uint256) = 10_000
 
 @deploy
-def __init__(_genesis: uint256, _token: address):
+def __init__(_distributor: address, _token: address):
     """
     @notice Constructor
-    @param _genesis Genesis timestamp
+    @param _distributor The distributor address
     @param _token The address of the reward token
     """
-    assert _genesis % EPOCH_LENGTH == 0
-    
-    genesis = _genesis
+    genesis = staticcall IDistributor(_distributor).genesis()
     token = IERC20(_token)
     self.management = msg.sender
+    self.distributor = IDistributor(_distributor)
 
     self.total_weights[0] = Weight(weight=10**12, slope=0)
     self.weight_scale = Scale(numerator=4, denominator=1)

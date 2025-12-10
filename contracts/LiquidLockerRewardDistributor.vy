@@ -21,6 +21,7 @@ interface IComponent:
     def sync_total_weight(_epoch: uint256) -> uint256: nonpayable
 
 interface IDistributor:
+    def genesis() -> uint256: view
     def claim() -> (uint256, uint256, uint256): nonpayable
 
 implements: IHooks
@@ -120,22 +121,22 @@ NORM_WEIGHT_PRECISION: constant(uint256) = 10**18
 BOUNTY_PRECISION: constant(uint256) = 10_000
 
 @deploy
-def __init__(_genesis: uint256, _token: address, _lock: uint256, _depositors: address[3]):
+def __init__(_distributor: address, _token: address, _lock: uint256, _depositors: address[3]):
     """
     @notice Constructor
-    @param _genesis Genesis timestamp
+    @param _distributor The distributor address
     @param _token The address of the reward token
     @param _lock The duration of the veYFI lock, in epochs
     @param _depositors Array with the address of each of the depositors
     """
-    assert _genesis % EPOCH_LENGTH == 0
     assert _lock <= BOOST_DURATION
 
-    genesis = _genesis
+    genesis = staticcall IDistributor(_distributor).genesis()
     token = IERC20(_token)
     lock_duration = _lock
 
     self.management = msg.sender
+    self.distributor = IDistributor(_distributor)
 
     for i: uint256 in range(3):
         d: address = _depositors[i]

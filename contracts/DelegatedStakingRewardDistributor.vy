@@ -17,7 +17,8 @@ interface IHooks:
     def on_stake(_caller: address, _account: address, _value: uint256): nonpayable
     def on_unstake(_account: address, _value: uint256): nonpayable
 
-interface IDistributor:
+interface IStakingDistributor:
+    def genesis() -> uint256: view
     def claim(_account: address) -> uint256: nonpayable
 
 implements: IHooks
@@ -28,7 +29,7 @@ management: public(address)
 pending_management: public(address)
 
 depositor: public(address)
-distributor: public(IDistributor)
+distributor: public(IStakingDistributor)
 distributor_claim: public(address)
 claimers: public(HashMap[address, bool])
 
@@ -66,16 +67,17 @@ EPOCH_LENGTH: constant(uint256) = 14 * 24 * 60 * 60
 PRECISION: constant(uint256) = 10**30
 
 @deploy
-def __init__(_genesis: uint256, _token: address):
+def __init__(_distributor: address, _token: address):
     """
     @notice Constructor
-    @param _genesis Genesis timestamp
+    @param _distributor The distributor address
     @param _token The address of the reward token
     """
-    assert _genesis % EPOCH_LENGTH == 0
-    genesis = _genesis
+    genesis = staticcall IStakingDistributor(_distributor).genesis()
     token = IERC20(_token)
+
     self.management = msg.sender
+    self.distributor = IStakingDistributor(_distributor)
 
 @external
 def on_transfer(_caller: address, _from: address, _to: address, _amount: uint256):
@@ -167,7 +169,7 @@ def set_distributor(_distributor: address):
     """
     assert msg.sender == self.management
 
-    self.distributor = IDistributor(_distributor)
+    self.distributor = IStakingDistributor(_distributor)
     log SetDistributor(distributor=_distributor)
 
 @external

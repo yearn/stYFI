@@ -9,9 +9,8 @@ BIG_MASK = 2**112 - 1
 DUST = 10**12
 
 @fixture
-def styfi_distributor(project, deployer, reward, distributor, genesis):
-    srd = project.StakingRewardDistributor.deploy(genesis, reward, sender=deployer)
-    srd.set_distributor(distributor, sender=deployer)
+def styfi_distributor(project, deployer, reward, distributor):
+    srd = project.StakingRewardDistributor.deploy(distributor, reward, sender=deployer)
     distributor.add_component(srd, COMPONENTS_SENTINEL, sender=deployer)
 
     return srd
@@ -31,10 +30,9 @@ def delegated(project, deployer, styfi, middleware):
     return delegated
 
 @fixture
-def delegated_distributor(project, deployer, genesis, reward, styfi_distributor, delegated):
-    drd = project.DelegatedStakingRewardDistributor.deploy(genesis, reward, sender=deployer)
+def delegated_distributor(project, deployer, reward, styfi_distributor, delegated):
+    drd = project.DelegatedStakingRewardDistributor.deploy(styfi_distributor, reward, sender=deployer)
     drd.set_depositor(delegated, sender=deployer)
-    drd.set_distributor(styfi_distributor, sender=deployer)
     drd.set_distributor_claim(delegated, sender=deployer)
     delegated.set_hooks(drd, sender=deployer)
     styfi_distributor.set_claimer(drd, True, sender=deployer)
@@ -136,6 +134,7 @@ def test_rewards(chain, deployer, alice, bob, charlie, reward, yfi, distributor,
     ts = genesis + EPOCH_LENGTH * 3 // 2
     chain.pending_timestamp = ts
     delegated.deposit(DUST, sender=alice)
+    chain.pending_timestamp = ts
     delegated.deposit(2 * DUST, bob, sender=alice)
 
     assert distributor.epoch_total_weight(0) == 4 * 2 * DUST
