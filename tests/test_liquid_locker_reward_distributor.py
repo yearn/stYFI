@@ -36,44 +36,6 @@ def claimer(project, deployer, reward, ll_distributor):
     return claimer
 
 @mark.parametrize("idx", [0, 1, 2])
-def test_deposit(chain, alice, ll_tokens, depositors, ll_distributor, idx):
-    token = ll_tokens[idx]
-    depositor = depositors[idx]
-    unit = SCALES[idx] * UNIT
-    token.mint(alice, 4 * unit, sender=alice)
-    token.approve(depositor, 4 * unit, sender=alice)
-
-    # cant deposit before genesis time
-    with reverts():
-        depositor.deposit(unit, sender=alice)
-
-    # initial deposit
-    assert ll_distributor.staked(idx, alice).amount == 0
-    assert ll_distributor.previous_staked(idx, alice).amount == 0
-    assert ll_distributor.total_staked(idx).amount == DUST
-
-    chain.pending_timestamp = ll_distributor.genesis()
-    depositor.deposit(unit, sender=alice)
-
-    assert ll_distributor.staked(idx, alice).amount == UNIT
-    assert ll_distributor.previous_staked(idx, alice).amount == 0
-    assert ll_distributor.total_staked(idx).amount == DUST + UNIT
-
-    # another deposit in same epoch
-    depositor.deposit(2 * unit, sender=alice)
-    assert ll_distributor.staked(idx, alice).amount == 3 * UNIT
-    assert ll_distributor.previous_staked(idx, alice).amount == 0
-    assert ll_distributor.total_staked(idx).amount == DUST + 3 * UNIT
-
-    # deposit in the next epoch
-    chain.pending_timestamp += EPOCH_LENGTH
-    depositor.deposit(unit, sender=alice)
-    assert ll_distributor.staked(idx, alice).amount == 4 * UNIT
-    assert ll_distributor.previous_staked(idx, alice).amount == 3 * UNIT
-    assert ll_distributor.total_staked(idx).amount == DUST + 4 * UNIT
-    assert ll_distributor.previous_total_staked(idx).amount == DUST + 3 * UNIT
-
-@mark.parametrize("idx", [0, 1, 2])
 def test_rewards(chain, alice, bob, charlie, reward, distributor, genesis, ll_tokens, depositors, ll_distributor, claimer, idx):
     token = ll_tokens[idx]
     depositor = depositors[idx]

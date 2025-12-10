@@ -12,6 +12,7 @@ DUST = 10**12
 def styfi_distributor(project, deployer, reward, styfi, distributor):
     srd = project.StakingRewardDistributor.deploy(distributor, reward, sender=deployer)
     srd.set_depositor(styfi, sender=deployer)
+    srd.set_staking(styfi, sender=deployer)
     styfi.set_hooks(srd, sender=deployer)
     distributor.add_component(srd, COMPONENTS_SENTINEL, sender=deployer)
 
@@ -33,30 +34,20 @@ def test_stake(chain, alice, yfi, styfi, styfi_distributor):
         styfi.deposit(UNIT, sender=alice)
 
     # initial deposit
-    assert styfi_distributor.packed_weights(alice) == 0
-    assert styfi_distributor.previous_packed_weights(alice) == 0
     assert styfi_distributor.total_weight_entries(0).weight == DUST
-
     chain.pending_timestamp = styfi_distributor.genesis()
     styfi.deposit(UNIT, sender=alice)
-
-    assert styfi_distributor.packed_weights(alice) & BIG_MASK == UNIT
-    assert styfi_distributor.previous_packed_weights(alice) == 0
     assert styfi_distributor.total_weight_cursor().count == 1
     assert styfi_distributor.total_weight_entries(0) == [0, DUST + UNIT]
 
     # another deposit in same epoch
     styfi.deposit(2 * UNIT, sender=alice)
-    assert styfi_distributor.packed_weights(alice) & BIG_MASK == 3 * UNIT
-    assert styfi_distributor.previous_packed_weights(alice) == 0
     assert styfi_distributor.total_weight_cursor().count == 1
     assert styfi_distributor.total_weight_entries(0) == [0, DUST + 3 * UNIT]
 
     # deposit in the next epoch
     chain.pending_timestamp += EPOCH_LENGTH
     styfi.deposit(UNIT, sender=alice)
-    assert styfi_distributor.packed_weights(alice) & BIG_MASK == 4 * UNIT
-    assert styfi_distributor.previous_packed_weights(alice) & BIG_MASK == 3 * UNIT
     assert styfi_distributor.total_weight_cursor().count == 2
     assert styfi_distributor.total_weight_entries(0) == (0, DUST + 3 * UNIT)
     assert styfi_distributor.total_weight_entries(1) == (1, DUST + 4 * UNIT)
@@ -71,16 +62,12 @@ def test_unstake(chain, alice, yfi, styfi, styfi_distributor):
     # unstake
     styfi.unstake(2 * UNIT, sender=alice)
 
-    assert styfi_distributor.packed_weights(alice) & BIG_MASK == UNIT
-    assert styfi_distributor.previous_packed_weights(alice) == 0
     assert styfi_distributor.total_weight_cursor().count == 1
     assert styfi_distributor.total_weight_entries(0) == (0, DUST + UNIT)
 
     # unstake more next epoch
     chain.pending_timestamp += EPOCH_LENGTH
     styfi.unstake(UNIT, sender=alice)
-    assert styfi_distributor.packed_weights(alice) & BIG_MASK == 0
-    assert styfi_distributor.previous_packed_weights(alice) & BIG_MASK == UNIT
     assert styfi_distributor.total_weight_cursor().count == 2
     assert styfi_distributor.total_weight_entries(0) == (0, DUST + UNIT)
     assert styfi_distributor.total_weight_entries(1) == (1, DUST)
@@ -95,20 +82,12 @@ def test_transfer(chain, alice, bob, yfi, styfi, styfi_distributor):
     # unstake
     styfi.transfer(bob, 2 * UNIT, sender=alice)
 
-    assert styfi_distributor.packed_weights(alice) & BIG_MASK == UNIT
-    assert styfi_distributor.previous_packed_weights(alice) == 0
-    assert styfi_distributor.packed_weights(bob) & BIG_MASK == 2 * UNIT
-    assert styfi_distributor.previous_packed_weights(bob) == 0
     assert styfi_distributor.total_weight_cursor().count == 1
     assert styfi_distributor.total_weight_entries(0) == (0, DUST + 3 * UNIT)
 
     # transfer more next epoch
     chain.pending_timestamp += EPOCH_LENGTH
     styfi.transfer(bob, UNIT, sender=alice)
-    assert styfi_distributor.packed_weights(alice) & BIG_MASK == 0
-    assert styfi_distributor.previous_packed_weights(alice) & BIG_MASK == UNIT
-    assert styfi_distributor.packed_weights(bob) & BIG_MASK == 3 * UNIT
-    assert styfi_distributor.previous_packed_weights(bob) & BIG_MASK == 2 * UNIT
     assert styfi_distributor.total_weight_cursor().count == 1
     assert styfi_distributor.total_weight_entries(0) == (0, DUST + 3 * UNIT)
 

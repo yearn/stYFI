@@ -16,9 +16,9 @@ from ethereum.ercs import IERC20
 from ethereum.ercs import IERC4626
 
 interface IHooks:
-    def on_transfer(_caller: address, _from: address, _to: address, _value: uint256): nonpayable
-    def on_stake(_caller: address, _account: address, _value: uint256): nonpayable
-    def on_unstake(_account: address, _value: uint256): nonpayable
+    def on_transfer(_caller: address, _from: address, _to: address, _supply: uint256, _prev_staked_from: uint256, _prev_staked_to: uint256, _value: uint256): nonpayable
+    def on_stake(_caller: address, _account: address, _prev_supply: uint256, _prev_staked: uint256, _value: uint256): nonpayable
+    def on_unstake(_account: address, _prev_supply: uint256, _prev_staked: uint256, _value: uint256): nonpayable
     def instant_withdrawal(_account: address) -> bool: view
 
 implements: IERC20
@@ -350,10 +350,12 @@ def _transfer(_from: address, _to: address, _value: uint256):
     """
     assert _to != empty(address) and _to != self
 
-    self.balanceOf[_from] -= _value
-    self.balanceOf[_to] += _value
+    prev_from: uint256 = self.balanceOf[_from]
+    prev_to: uint256 = self.balanceOf[_to]
+    self.balanceOf[_from] = prev_from - _value
+    self.balanceOf[_to] = prev_to + _value
 
-    extcall self.hooks.on_transfer(msg.sender, _from, _to, _value)
+    extcall self.hooks.on_transfer(msg.sender, _from, _to, self.totalSupply, prev_from, prev_to, _value)
 
     log Transfer(sender=_from, receiver=_to, value=_value)
 
@@ -364,11 +366,13 @@ def _stake(_receiver: address, _value: uint256):
     """
     assert _receiver != empty(address) and _receiver != self
 
-    self.totalSupply += _value
-    self.balanceOf[_receiver] += _value
+    prev_supply: uint256 = self.totalSupply
+    prev_balance: uint256 = self.balanceOf[_receiver]
+    self.totalSupply = prev_supply + _value
+    self.balanceOf[_receiver] = prev_balance + _value
 
     assert extcall IERC20(asset).transferFrom(msg.sender, self, _value, default_return_value=True)
-    extcall self.hooks.on_stake(msg.sender, _receiver, _value)
+    extcall self.hooks.on_stake(msg.sender, _receiver, prev_supply, prev_balance, _value)
 
     log Deposit(sender=msg.sender, owner=_receiver, assets=_value, shares=_value)
     log Transfer(sender=empty(address), receiver=_receiver, value=_value)
@@ -380,8 +384,10 @@ def _unstake(_owner: address, _value: uint256):
     """
     assert _value > 0
 
-    self.totalSupply -= _value
-    self.balanceOf[_owner] -= _value
+    prev_supply: uint256 = self.totalSupply
+    prev_balance: uint256 = self.balanceOf[_owner]
+    self.totalSupply = prev_supply - _value
+    self.balanceOf[_owner] = prev_balance - _value
 
     time: uint256 = 0
     total: uint256 = 0
@@ -389,7 +395,7 @@ def _unstake(_owner: address, _value: uint256):
     time, total, claimed = self._unpack(self.packed_streams[_owner])
     self.packed_streams[_owner] = self._pack(block.timestamp, total - claimed + _value, 0)
 
-    extcall self.hooks.on_unstake(_owner, _value)
+    extcall self.hooks.on_unstake(_owner, prev_supply, prev_balance, _value)
 
     log Transfer(sender=_owner, receiver=empty(address), value=_value)
 

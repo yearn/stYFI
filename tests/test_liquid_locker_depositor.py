@@ -229,33 +229,49 @@ def test_approve(alice, bob, depositor):
     depositor.approve(bob, UNIT, sender=alice)
     assert depositor.allowance(alice, bob) == UNIT
 
-def test_stake_hook(deployer, alice, underlying, hooks, depositor):
+def test_stake_hook(deployer, alice, bob, underlying, hooks, depositor):
     # staking triggers the hook
-    underlying.mint(alice, UNIT, sender=deployer)
-    underlying.approve(depositor, UNIT, sender=alice)
+    underlying.mint(alice, 3 * UNIT, sender=deployer)
+    underlying.approve(depositor, 3 * UNIT, sender=alice)
 
-    assert hooks.last_stake() == (ZERO_ADDRESS, ZERO_ADDRESS, 0)
+    assert hooks.last_stake() == (ZERO_ADDRESS, ZERO_ADDRESS, 0, 0, 0)
+    depositor.deposit(2 * UNIT, sender=alice)
+    assert hooks.last_stake() == (alice, alice, 0, 0, 2 * UNIT // 4)
     depositor.deposit(UNIT, sender=alice)
-    assert hooks.last_stake() == (alice, alice, UNIT // 4)
+    assert hooks.last_stake() == (alice, alice, 2 * UNIT // 4, 2 * UNIT // 4, UNIT // 4)
+
+    underlying.mint(bob, UNIT, sender=deployer)
+    underlying.approve(depositor, UNIT, sender=bob)
+    depositor.deposit(UNIT, sender=bob)
+    assert hooks.last_stake() == (bob, bob, 3 * UNIT // 4, 0, UNIT // 4)
 
 def test_stake_for_hook(deployer, alice, bob, underlying, hooks, depositor):
     # staking for someone else triggers the hook
-    underlying.mint(alice, UNIT, sender=deployer)
-    underlying.approve(depositor, UNIT, sender=alice)
+    underlying.mint(alice, 3 * UNIT, sender=deployer)
+    underlying.approve(depositor, 3 * UNIT, sender=alice)
 
-    assert hooks.last_stake() == (ZERO_ADDRESS, ZERO_ADDRESS, 0)
+    assert hooks.last_stake() == (ZERO_ADDRESS, ZERO_ADDRESS, 0, 0, 0)
+    depositor.deposit(2 * UNIT, bob, sender=alice)
+    assert hooks.last_stake() == (alice, bob, 0, 0, 2 * UNIT // 4)
     depositor.deposit(UNIT, bob, sender=alice)
-    assert hooks.last_stake() == (alice, bob, UNIT // 4)
+    assert hooks.last_stake() == (alice, bob, 2 * UNIT // 4, 2 * UNIT // 4, UNIT // 4)
 
-def test_unstake_hook(deployer, alice, underlying, hooks, depositor):
+def test_unstake_hook(deployer, alice, bob, underlying, hooks, depositor):
     # unstaking triggers the hook
     underlying.mint(alice, 3 * UNIT, sender=deployer)
     underlying.approve(depositor, 3 * UNIT, sender=alice)
     depositor.deposit(3 * UNIT, sender=alice)
 
-    assert hooks.last_unstake() == (ZERO_ADDRESS, 0)
+    assert hooks.last_unstake() == (ZERO_ADDRESS, 0, 0, 0)
     depositor.unstake(UNIT // 4, sender=alice)
-    assert hooks.last_unstake() == (alice, UNIT // 4)
+    assert hooks.last_unstake() == (alice, 3 * UNIT // 4, 3 * UNIT // 4, UNIT // 4)
+
+    underlying.mint(bob, UNIT, sender=deployer)
+    underlying.approve(depositor, UNIT, sender=bob)
+    depositor.deposit(UNIT, sender=bob)
+
+    depositor.unstake(UNIT // 4, sender=alice)
+    assert hooks.last_unstake() == (alice, 3 * UNIT // 4, 2 * UNIT // 4, UNIT // 4)
 
 def test_set_hooks(project, deployer, depositor, hooks):
     # hooks contract can be changed

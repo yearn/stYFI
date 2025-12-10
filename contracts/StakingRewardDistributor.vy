@@ -14,9 +14,9 @@
 from ethereum.ercs import IERC20
 
 interface IHooks:
-    def on_transfer(_caller: address, _from: address, _to: address, _value: uint256): nonpayable
-    def on_stake(_caller: address, _account: address, _value: uint256): nonpayable
-    def on_unstake(_account: address, _value: uint256): nonpayable
+    def on_transfer(_caller: address, _from: address, _to: address, _supply: uint256, _prev_staked_from: uint256, _prev_staked_to: uint256, _value: uint256): nonpayable
+    def on_stake(_caller: address, _account: address, _prev_supply: uint256, _prev_staked: uint256, _value: uint256): nonpayable
+    def on_unstake(_account: address, _prev_supply: uint256, _prev_staked: uint256, _value: uint256): nonpayable
     def instant_withdrawal(_account: address) -> bool: view
 
 interface IComponent:
@@ -56,6 +56,7 @@ management: public(address)
 pending_management: public(address)
 
 depositor: public(address)
+staking: public(IERC20)
 distributor: public(IDistributor)
 weight_scale: public(Scale)
 claimers: public(HashMap[address, bool])
@@ -65,9 +66,6 @@ reclaim_recipient: public(address)
 
 total_weight_cursor: public(Cursor)
 total_weight_entries: public(HashMap[uint256, TotalWeight]) # idx => epoch | weight
-
-previous_packed_weights: public(HashMap[address, uint256]) # epoch | time | weight
-packed_weights: public(HashMap[address, uint256]) # epoch | time | balance
 
 epoch_rewards: public(Rewards)
 reward_integral: public(uint256)
@@ -87,6 +85,9 @@ event Reclaim:
 
 event SetDepositor:
     depositor: indexed(address)
+
+event SetStaking:
+    staking: indexed(address)
 
 event SetDistributor:
     distributor: indexed(address)
@@ -114,8 +115,6 @@ EPOCH_LENGTH: constant(uint256) = 14 * 24 * 60 * 60
 RAMP_LENGTH: constant(uint256) = 4 * EPOCH_LENGTH
 INCREMENT: constant(bool) = True
 DECREMENT: constant(bool) = False
-SMALL_MASK: constant(uint256) = 2**32 - 1
-BIG_MASK: constant(uint256) = 2**112 - 1
 PRECISION: constant(uint256) = 10**30
 BOUNTY_PRECISION: constant(uint256) = 10_000
 
@@ -185,47 +184,55 @@ def sync_rewards(_account: address = empty(address)) -> bool:
     """
     synced: bool = self._sync_integral()
     if _account != empty(address):
-        self._sync_account_integral(_account)
+        staked: uint256 = staticcall self.staking.balanceOf(_account)
+        self._sync_account_integral(_account, staked)
     return synced
 
 @external
-def on_transfer(_caller: address, _from: address, _to: address, _amount: uint256):
+def on_transfer(_caller: address, _from: address, _to: address, _supply: uint256, _prev_staked_from: uint256, _prev_staked_to: uint256, _amount: uint256):
     """
     @notice Triggered by the hook upon transfer of tokens
     @param _caller Originator of the transfer
     @param _from Sender of the token
     @param _to Recipient of the tokens
+    @param _supply Total token supply
+    @param _prev_staked_from Staked balance of sender before transfer
+    @param _prev_staked_to Staked balance of recipient before transfer
     @param _amount Amount of tokens to transfer
     """
     assert msg.sender == self.depositor
     assert self._sync_integral()
-    self._update_weight(_from, _amount, DECREMENT)
-    self._update_weight(_to, _amount, INCREMENT)
+    self._sync_account_integral(_from, _prev_staked_from)
+    self._sync_account_integral(_to, _prev_staked_to)
 
 @external
-def on_stake(_caller: address, _account: address, _amount: uint256):
+def on_stake(_caller: address, _account: address, _prev_supply: uint256, _prev_staked: uint256, _amount: uint256):
     """
     @notice Triggered by the hook upon staking of tokens
     @param _caller Originator of the tokens
     @param _account Recipient of the staked tokens
+    @param _prev_supply Total token supply before stake
+    @param _prev_staked Staked balance of recipient before stake
     @param _amount Amount of tokens to stake
     """
     assert msg.sender == self.depositor
     assert self._sync_integral()
     self._update_total_weight(_amount, INCREMENT)
-    self._update_weight(_account, _amount, INCREMENT)
+    self._sync_account_integral(_account, _prev_staked)
 
 @external
-def on_unstake(_account: address, _amount: uint256):
+def on_unstake(_account: address, _prev_supply: uint256, _prev_staked: uint256, _amount: uint256):
     """
     @notice Triggered by the hook upon unstaking of tokens
     @param _account Originator of the staked tokens
+    @param _prev_supply Total token supply before unstake
+    @param _prev_staked Staked balance of originator before unstake
     @param _amount Amount of tokens to unstake
     """
     assert msg.sender == self.depositor
     assert self._sync_integral()
     self._update_total_weight(_amount, DECREMENT)
-    self._update_weight(_account, _amount, DECREMENT)
+    self._sync_account_integral(_account, _prev_staked)
 
 @external
 @view
@@ -244,13 +251,14 @@ def claim(_account: address) -> uint256:
     @param _account Account to claim rewards for
     @return Amount of rewards tokens claimed
     """
-    if self.packed_weights[_account] == 0 and self.pending_rewards[_account] == 0:
+    staked: uint256 = staticcall self.staking.balanceOf(_account)
+    if staked == 0 and self.pending_rewards[_account] == 0:
         # shortcut accounts that are guaranteed to have no rewards
         return 0
 
     assert self.claimers[msg.sender]
     assert self._sync_integral()
-    pending: uint256 = self._sync_account_integral(_account)
+    pending: uint256 = self._sync_account_integral(_account, staked)
 
     if pending > 0:
         self.pending_rewards[_account] = 0
@@ -268,8 +276,8 @@ def reclaim(_account: address) -> (uint256, uint256):
     """
     assert self._sync_integral()
 
-    weight: uint256 = self._unpack(self.packed_weights[_account])[2]
-    if weight == 0:
+    staked: uint256 = staticcall self.staking.balanceOf(_account)
+    if staked == 0:
         return 0, 0
 
     epoch: uint256 = self._epoch() - self.reward_expiration
@@ -278,7 +286,7 @@ def reclaim(_account: address) -> (uint256, uint256):
     if account_integral >= integral:
         return 0, 0
 
-    rewards: uint256 = (integral - account_integral) * weight // PRECISION
+    rewards: uint256 = (integral - account_integral) * staked // PRECISION
     self.account_reward_integral[_account] = integral
     if rewards == 0:
         return 0, 0
@@ -296,26 +304,6 @@ def reclaim(_account: address) -> (uint256, uint256):
     return rewards, bounty
 
 @external
-@view
-def weight_snapshot(_account: address) -> Weight:
-    """
-    @notice Query the latest snapshotted weight of an account
-    @param _account Account to query for
-    @return Snapshotted time and weight
-    """
-    current_epoch: uint256 = self._epoch()
-    epoch: uint256 = 0
-    time: uint256 = 0
-    weight: uint256 = 0
-    epoch, time, weight = self._unpack(self.packed_weights[_account])
-
-    if epoch == current_epoch:
-        # load from snapshot
-        epoch, time, weight = self._unpack(self.previous_packed_weights[_account])
-
-    return Weight(epoch=epoch, time=time, weight=weight)
-
-@external
 def set_depositor(_depositor: address):
     """
     @notice Set the depositor
@@ -327,6 +315,19 @@ def set_depositor(_depositor: address):
 
     self.depositor = _depositor
     log SetDepositor(depositor=_depositor)
+
+@external
+def set_staking(_staking: address):
+    """
+    @notice Set the staking address
+    @param _staking Staking address
+    @dev Can only be called by management
+    @dev Caller is responsible for ensuring consistency between the depositor and staking contract
+    """
+    assert msg.sender == self.management
+
+    self.staking = IERC20(_staking)
+    log SetStaking(staking=_staking)
 
 @external
 def set_distributor(_distributor: address):
@@ -442,40 +443,6 @@ def _update_total_weight(_amount: uint256, _increment: bool):
     self.total_weight_entries[idx] = weight
 
 @internal
-def _update_weight(_account: address, _amount: uint256, _increment: bool):
-    """
-    @notice Increase or decrease the weight of an account.
-            Global integral must be synced before calling
-    """
-    self._sync_account_integral(_account)
-
-    if _amount == 0:
-        return
-
-    current_epoch: uint256 = self._epoch()
-    epoch: uint256 = 0
-    time: uint256 = 0
-    weight: uint256 = 0
-    epoch, time, weight = self._unpack(self.packed_weights[_account])
-
-    if _increment == INCREMENT:
-        if time > 0:
-            time = min(block.timestamp - time, RAMP_LENGTH)
-        # amount-weighted average time
-        time = block.timestamp - (weight * time) // (weight + _amount)
-        weight += _amount
-    else:
-        weight -= _amount
-        if weight == 0:
-            time = 0
-
-    # snapshot
-    if current_epoch > epoch:
-        self.previous_packed_weights[_account] = self.packed_weights[_account]
-
-    self.packed_weights[_account] = self._pack(current_epoch, time, weight)
-
-@internal
 def _sync_integral() -> bool:
     """
     @notice Sync global integral to the latest value
@@ -534,32 +501,14 @@ def _sync_integral() -> bool:
     return synced
 
 @internal
-def _sync_account_integral(_account: address) -> uint256:
+def _sync_account_integral(_account: address, _staked: uint256) -> uint256:
     """
     @notice Sync integral of a specific account to the latest value
     """
-    weight: uint256 = self._unpack(self.packed_weights[_account])[2]
     integral: uint256 = self.reward_integral
     pending: uint256 = self.pending_rewards[_account]
-    if weight > 0:
-        pending += (integral - self.account_reward_integral[_account]) * weight // PRECISION
+    if _staked > 0:
+        pending += (integral - self.account_reward_integral[_account]) * _staked // PRECISION
         self.pending_rewards[_account] = pending
     self.account_reward_integral[_account] = integral
     return pending
-
-@internal
-@pure
-def _pack(_a: uint256, _b: uint256, _c: uint256) -> uint256:
-    """
-    @notice Pack a small value and two big values into a single storage slot
-    """
-    assert _a <= SMALL_MASK and _b <= BIG_MASK and _c <= BIG_MASK
-    return (_a << 224) | (_b << 112) | _c
-
-@internal
-@pure
-def _unpack(_packed: uint256) -> (uint256, uint256, uint256):
-    """
-    @notice Unpack a small value and two big values from a single storage slot
-    """
-    return _packed >> 224, (_packed >> 112) & BIG_MASK, _packed & BIG_MASK

@@ -20,6 +20,7 @@ def middleware(project, deployer, styfi, styfi_distributor):
     middleware = project.StakingMiddleware.deploy(styfi, styfi_distributor, sender=deployer)
     styfi.set_hooks(middleware, sender=deployer)
     styfi_distributor.set_depositor(middleware, sender=deployer)
+    styfi_distributor.set_staking(styfi, sender=deployer)
 
     return middleware
 
@@ -33,6 +34,7 @@ def delegated(project, deployer, styfi, middleware):
 def delegated_distributor(project, deployer, reward, styfi_distributor, delegated):
     drd = project.DelegatedStakingRewardDistributor.deploy(styfi_distributor, reward, sender=deployer)
     drd.set_depositor(delegated, sender=deployer)
+    drd.set_staking(delegated, sender=deployer)
     drd.set_distributor_claim(delegated, sender=deployer)
     delegated.set_hooks(drd, sender=deployer)
     styfi_distributor.set_claimer(drd, True, sender=deployer)
@@ -46,7 +48,7 @@ def claimer(project, deployer, reward, delegated_distributor):
     delegated_distributor.set_claimer(claimer, True, sender=deployer)
     return claimer
 
-def test_stake(chain, alice, yfi, styfi, styfi_distributor, delegated, delegated_distributor):
+def test_stake(chain, alice, yfi, styfi, delegated, delegated_distributor):
     yfi.mint(alice, 4 * UNIT, sender=alice)
     yfi.approve(delegated, 4 * UNIT, sender=alice)
 
@@ -54,23 +56,20 @@ def test_stake(chain, alice, yfi, styfi, styfi_distributor, delegated, delegated
     with reverts():
         delegated.deposit(UNIT, sender=alice)
 
-    # initial deposit
-    assert delegated_distributor.weights(alice) == 0
-    assert delegated_distributor.total_weight() == 0
+    assert yfi.balanceOf(styfi) == 0
+    assert styfi.balanceOf(delegated) == 0
 
+    # initial deposit
     chain.pending_timestamp = delegated_distributor.genesis()
     delegated.deposit(UNIT, sender=alice)
 
-    assert delegated_distributor.weights(alice) == UNIT
-    assert delegated_distributor.total_weight() == UNIT
-    assert styfi_distributor.packed_weights(delegated) & BIG_MASK == UNIT
-    assert yfi.balanceOf(styfi) ==  UNIT
+    assert yfi.balanceOf(styfi) == UNIT
+    assert styfi.balanceOf(delegated) == UNIT
 
-    # another deposit in same epoch
+    # another deposit
     delegated.deposit(3 * UNIT, sender=alice)
-    assert delegated_distributor.weights(alice) == 4 * UNIT
-    assert delegated_distributor.total_weight() == 4 * UNIT
-    assert styfi_distributor.packed_weights(delegated) & BIG_MASK == 4 * UNIT
+    assert yfi.balanceOf(styfi) == 4 * UNIT
+    assert styfi.balanceOf(delegated) == 4 * UNIT
 
 def test_unstake(chain, alice, yfi, styfi, styfi_distributor, delegated, delegated_distributor):
     yfi.mint(alice, 4 * UNIT, sender=alice)
@@ -78,20 +77,15 @@ def test_unstake(chain, alice, yfi, styfi, styfi_distributor, delegated, delegat
 
     chain.pending_timestamp = delegated_distributor.genesis()
     delegated.deposit(4 * UNIT, sender=alice)
-
-    assert delegated_distributor.weights(alice) == 4 * UNIT
-    assert delegated_distributor.total_weight() == 4 * UNIT
-    assert styfi_distributor.packed_weights(delegated) & BIG_MASK == 4 * UNIT
     assert yfi.balanceOf(styfi) == 4 * UNIT
+    assert styfi.balanceOf(delegated) == 4 * UNIT
 
     # unstake
     ts = chain.pending_timestamp
     delegated.unstake(UNIT, sender=alice)
-    assert delegated_distributor.weights(alice) == 3 * UNIT
-    assert delegated_distributor.total_weight() == 3 * UNIT
-    assert styfi_distributor.packed_weights(delegated) & BIG_MASK == 3 * UNIT
     assert yfi.balanceOf(styfi) == 3 * UNIT
     assert yfi.balanceOf(delegated) == UNIT
+    assert styfi.balanceOf(delegated) == 3 * UNIT
 
     assert delegated.maxWithdraw(alice) == 0
     chain.pending_timestamp = ts + EPOCH_LENGTH // 2

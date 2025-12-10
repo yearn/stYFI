@@ -324,48 +324,68 @@ def test_transfer_hook(deployer, alice, bob, yfi, hooks, staking):
     yfi.approve(staking, 3 * UNIT, sender=alice)
     staking.deposit(3 * UNIT, sender=alice)
 
-    assert hooks.last_transfer() == (ZERO_ADDRESS, ZERO_ADDRESS, ZERO_ADDRESS, 0)
+    assert hooks.last_transfer() == (ZERO_ADDRESS, ZERO_ADDRESS, ZERO_ADDRESS, 0, 0, 0, 0)
     staking.transfer(bob, UNIT, sender=alice)
-    assert hooks.last_transfer() == (alice, alice, bob, UNIT)
+    assert hooks.last_transfer() == (alice, alice, bob, 3 * UNIT, 3 * UNIT, 0, UNIT)
+    staking.transfer(bob, UNIT, sender=alice)
+    assert hooks.last_transfer() == (alice, alice, bob, 3 * UNIT, 2 * UNIT, UNIT, UNIT)
 
 def test_transfer_from_hook(deployer, alice, bob, yfi, hooks, staking):
     # transfering with allowance triggers the hook
     yfi.mint(alice, 3 * UNIT, sender=deployer)
     yfi.approve(staking, 3 * UNIT, sender=alice)
     staking.deposit(3 * UNIT, sender=alice)
-    staking.approve(bob, UNIT, sender=alice)
+    staking.approve(bob, 2 * UNIT, sender=alice)
 
-    assert hooks.last_transfer() == (ZERO_ADDRESS, ZERO_ADDRESS, ZERO_ADDRESS, 0)
+    assert hooks.last_transfer() == (ZERO_ADDRESS, ZERO_ADDRESS, ZERO_ADDRESS, 0, 0, 0, 0)
     staking.transferFrom(alice, bob, UNIT, sender=bob)
-    assert hooks.last_transfer() == (bob, alice, bob, UNIT)
+    assert hooks.last_transfer() == (bob, alice, bob, 3 * UNIT, 3 * UNIT, 0, UNIT)
+    staking.transferFrom(alice, bob, UNIT, sender=bob)
+    assert hooks.last_transfer() == (bob, alice, bob, 3 * UNIT, 2 * UNIT, UNIT, UNIT)
 
-def test_stake_hook(deployer, alice, yfi, hooks, staking):
+def test_stake_hook(deployer, alice, bob, yfi, hooks, staking):
     # staking triggers the hook
-    yfi.mint(alice, UNIT, sender=deployer)
-    yfi.approve(staking, UNIT, sender=alice)
+    yfi.mint(alice, 3 * UNIT, sender=deployer)
+    yfi.approve(staking, 3 * UNIT, sender=alice)
 
-    assert hooks.last_stake() == (ZERO_ADDRESS, ZERO_ADDRESS, 0)
+    assert hooks.last_stake() == (ZERO_ADDRESS, ZERO_ADDRESS, 0, 0, 0)
+    staking.deposit(2 * UNIT, sender=alice)
+    assert hooks.last_stake() == (alice, alice, 0, 0, 2 * UNIT)
     staking.deposit(UNIT, sender=alice)
-    assert hooks.last_stake() == (alice, alice, UNIT)
+    assert hooks.last_stake() == (alice, alice, 2 * UNIT, 2 * UNIT, UNIT)
+
+    yfi.mint(bob, UNIT, sender=deployer)
+    yfi.approve(staking, UNIT, sender=bob)
+    staking.deposit(UNIT, sender=bob)
+    assert hooks.last_stake() == (bob, bob, 3 * UNIT, 0, UNIT)
 
 def test_stake_for_hook(deployer, alice, bob, yfi, hooks, staking):
     # staking for someone else triggers the hook
-    yfi.mint(alice, UNIT, sender=deployer)
-    yfi.approve(staking, UNIT, sender=alice)
+    yfi.mint(alice, 3 * UNIT, sender=deployer)
+    yfi.approve(staking, 3 * UNIT, sender=alice)
 
-    assert hooks.last_stake() == (ZERO_ADDRESS, ZERO_ADDRESS, 0)
+    assert hooks.last_stake() == (ZERO_ADDRESS, ZERO_ADDRESS, 0, 0, 0)
+    staking.deposit(2 * UNIT, bob, sender=alice)
+    assert hooks.last_stake() == (alice, bob, 0, 0, 2 * UNIT)
     staking.deposit(UNIT, bob, sender=alice)
-    assert hooks.last_stake() == (alice, bob, UNIT)
+    assert hooks.last_stake() == (alice, bob, 2 * UNIT, 2 * UNIT, UNIT)
 
-def test_unstake_hook(deployer, alice, yfi, hooks, staking):
+def test_unstake_hook(deployer, alice, bob, yfi, hooks, staking):
     # unstaking triggers the hook
     yfi.mint(alice, 3 * UNIT, sender=deployer)
     yfi.approve(staking, 3 * UNIT, sender=alice)
     staking.deposit(3 * UNIT, sender=alice)
 
-    assert hooks.last_unstake() == (ZERO_ADDRESS, 0)
+    assert hooks.last_unstake() == (ZERO_ADDRESS, 0, 0, 0)
     staking.unstake(UNIT, sender=alice)
-    assert hooks.last_unstake() == (alice, UNIT)
+    assert hooks.last_unstake() == (alice, 3 * UNIT, 3 * UNIT, UNIT)
+
+    yfi.mint(bob, UNIT, sender=deployer)
+    yfi.approve(staking, UNIT, sender=bob)
+    staking.deposit(UNIT, sender=bob)
+
+    staking.unstake(UNIT, sender=alice)
+    assert hooks.last_unstake() == (alice, 3 * UNIT, 2 * UNIT, UNIT)
 
 def test_unstake_instant_hook(deployer, alice, yfi, hooks, staking):
     # instant withdraw triggers the hook
@@ -373,10 +393,10 @@ def test_unstake_instant_hook(deployer, alice, yfi, hooks, staking):
     yfi.approve(staking, 3 * UNIT, sender=alice)
     staking.deposit(3 * UNIT, sender=alice)
 
-    assert hooks.last_unstake() == (ZERO_ADDRESS, 0)
+    assert hooks.last_unstake() == (ZERO_ADDRESS, 0, 0, 0)
     hooks.set_instant_withdrawal(alice, True, sender=alice)
     staking.withdraw(UNIT, sender=alice)
-    assert hooks.last_unstake() == (alice, UNIT)
+    assert hooks.last_unstake() == (alice, 3 * UNIT, 3 * UNIT, UNIT)
     
 def test_unstake_instant_toggle_hook(deployer, alice, yfi, hooks, staking):
     # instant withdraw after toggling triggers the hook
@@ -384,12 +404,12 @@ def test_unstake_instant_toggle_hook(deployer, alice, yfi, hooks, staking):
     yfi.approve(staking, 4 * UNIT, sender=alice)
     staking.deposit(4 * UNIT, sender=alice)
 
-    assert hooks.last_unstake() == (ZERO_ADDRESS, 0)
+    assert hooks.last_unstake() == (ZERO_ADDRESS, 0, 0, 0)
     staking.unstake(UNIT, sender=alice)
-    assert hooks.last_unstake() == (alice, UNIT)
+    assert hooks.last_unstake() == (alice, 4 * UNIT, 4 * UNIT, UNIT)
     hooks.set_instant_withdrawal(alice, True, sender=alice)
     staking.withdraw(3 * UNIT, sender=alice)
-    assert hooks.last_unstake() == (alice, 2 * UNIT)
+    assert hooks.last_unstake() == (alice, 3 * UNIT, 3 * UNIT, 2 * UNIT)
 
 def test_set_hooks(project, deployer, staking, hooks):
     # hooks contract can be changed

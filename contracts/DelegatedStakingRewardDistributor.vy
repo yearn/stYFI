@@ -13,9 +13,9 @@
 from ethereum.ercs import IERC20
 
 interface IHooks:
-    def on_transfer(_caller: address, _from: address, _to: address, _value: uint256): nonpayable
-    def on_stake(_caller: address, _account: address, _value: uint256): nonpayable
-    def on_unstake(_account: address, _value: uint256): nonpayable
+    def on_transfer(_caller: address, _from: address, _to: address, _supply: uint256, _prev_staked_from: uint256, _prev_staked_to: uint256, _value: uint256): nonpayable
+    def on_stake(_caller: address, _account: address, _prev_supply: uint256, _prev_staked: uint256, _value: uint256): nonpayable
+    def on_unstake(_account: address, _prev_supply: uint256, _prev_staked: uint256, _value: uint256): nonpayable
 
 interface IStakingDistributor:
     def genesis() -> uint256: view
@@ -29,12 +29,10 @@ management: public(address)
 pending_management: public(address)
 
 depositor: public(address)
+staking: public(IERC20)
 distributor: public(IStakingDistributor)
 distributor_claim: public(address)
 claimers: public(HashMap[address, bool])
-
-total_weight: public(uint256)
-weights: public(HashMap[address, uint256])
 
 reward_integral: public(uint256)
 account_reward_integral: public(HashMap[address, uint256])
@@ -46,6 +44,9 @@ event Claim:
 
 event SetDepositor:
     depositor: indexed(address)
+
+event SetStaking:
+    staking: indexed(address)
 
 event SetDistributor:
     distributor: indexed(address)
@@ -80,50 +81,48 @@ def __init__(_distributor: address, _token: address):
     self.distributor = IStakingDistributor(_distributor)
 
 @external
-def on_transfer(_caller: address, _from: address, _to: address, _amount: uint256):
+def on_transfer(_caller: address, _from: address, _to: address, _supply: uint256, _prev_staked_from: uint256, _prev_staked_to: uint256, _amount: uint256):
     """
     @notice Triggered by the hook upon transfer of tokens
     @param _caller Originator of the transfer
     @param _from Sender of the token
     @param _to Recipient of the tokens
+    @param _supply Total token supply
+    @param _prev_staked_from Staked balance of sender before transfer
+    @param _prev_staked_to Staked balance of recipient before transfer
     @param _amount Amount of tokens to transfer
     """
     assert msg.sender == self.depositor
-    self._sync_integral()
-    self._sync_account_integral(_from)
-    self._sync_account_integral(_to)
-
-    self.weights[_from] -= _amount
-    self.weights[_to] += _amount
+    self._sync_integral(_supply)
+    self._sync_account_integral(_from, _prev_staked_from)
+    self._sync_account_integral(_to, _prev_staked_to)
 
 @external
-def on_stake(_caller: address, _account: address, _amount: uint256):
+def on_stake(_caller: address, _account: address, _prev_supply: uint256, _prev_staked: uint256, _amount: uint256):
     """
     @notice Triggered by the hook upon staking of tokens
     @param _caller Originator of the tokens
     @param _account Recipient of the staked tokens
+    @param _prev_supply Total token supply before stake
+    @param _prev_staked Staked balance of recipient before stake
     @param _amount Amount of tokens to stake
     """
     assert msg.sender == self.depositor
-    self._sync_integral()
-    self._sync_account_integral(_account)
-
-    self.total_weight += _amount
-    self.weights[_account] += _amount
+    self._sync_integral(_prev_supply)
+    self._sync_account_integral(_account, _prev_staked)
 
 @external
-def on_unstake(_account: address, _amount: uint256):
+def on_unstake(_account: address, _prev_supply: uint256, _prev_staked: uint256, _amount: uint256):
     """
     @notice Triggered by the hook upon unstaking of tokens
     @param _account Originator of the staked tokens
+    @param _prev_supply Total token supply before unstake
+    @param _prev_staked Staked balance of originator before unstake
     @param _amount Amount of tokens to unstake
     """
     assert msg.sender == self.depositor
-    self._sync_integral()
-    self._sync_account_integral(_account)
-
-    self.total_weight -= _amount
-    self.weights[_account] -= _amount
+    self._sync_integral(_prev_supply)
+    self._sync_account_integral(_account, _prev_staked)
 
 @external
 def claim(_account: address) -> uint256:
@@ -132,13 +131,16 @@ def claim(_account: address) -> uint256:
     @param _account Account to claim rewards for
     @return Amount of rewards tokens claimed
     """
-    if self.weights[_account] == 0 and self.pending_rewards[_account] == 0:
+    staked: uint256 = staticcall self.staking.balanceOf(_account)
+    if staked == 0 and self.pending_rewards[_account] == 0:
         # shortcut accounts that are guaranteed to have no rewards
         return 0
 
     assert self.claimers[msg.sender]
-    self._sync_integral()
-    pending: uint256 = self._sync_account_integral(_account)
+
+    supply: uint256 = staticcall self.staking.totalSupply()
+    self._sync_integral(supply)
+    pending: uint256 = self._sync_account_integral(_account, staked)
 
     if pending > 0:
         self.pending_rewards[_account] = 0
@@ -159,6 +161,19 @@ def set_depositor(_depositor: address):
 
     self.depositor = _depositor
     log SetDepositor(depositor=_depositor)
+
+@external
+def set_staking(_staking: address):
+    """
+    @notice Set the staking address
+    @param _staking Staking address
+    @dev Can only be called by management
+    @dev Caller is responsible for ensuring consistency between the depositor and staking contract
+    """
+    assert msg.sender == self.management
+
+    self.staking = IERC20(_staking)
+    log SetStaking(staking=_staking)
 
 @external
 def set_distributor(_distributor: address):
@@ -223,30 +238,28 @@ def accept_management():
     log SetManagement(management=msg.sender)
 
 @internal
-def _sync_integral():
+def _sync_integral(_supply: uint256):
     """
     @notice Claim rewards and update integral
     """
-    total_weight: uint256 = self.total_weight
-    if total_weight < 10**12:
+    if _supply < 10**12:
         # rewards only accrue when there are depositors
         return
 
     rewards: uint256 = extcall self.distributor.claim(self.distributor_claim)
     if rewards > 0:
-        self.reward_integral += rewards * PRECISION // total_weight
+        self.reward_integral += rewards * PRECISION // _supply
 
 @internal
-def _sync_account_integral(_account: address) -> uint256:
+def _sync_account_integral(_account: address, _staked: uint256) -> uint256:
     """
     @notice Sync integral for a specific account
             Global integral should be synced prior to calling this
     """
-    weight: uint256 = self.weights[_account]
     integral: uint256 = self.reward_integral
     pending: uint256 = self.pending_rewards[_account]
-    if weight > 0:
-        pending += (integral - self.account_reward_integral[_account]) * weight // PRECISION
+    if _staked > 0:
+        pending += (integral - self.account_reward_integral[_account]) * _staked // PRECISION
         self.pending_rewards[_account] = pending
     self.account_reward_integral[_account] = integral
     return pending

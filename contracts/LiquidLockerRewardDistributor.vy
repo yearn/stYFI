@@ -14,8 +14,8 @@
 from ethereum.ercs import IERC20
 
 interface IHooks:
-    def on_stake(_caller: address, _account: address, _value: uint256): nonpayable
-    def on_unstake(_account: address, _value: uint256): nonpayable
+    def on_stake(_caller: address, _account: address, _prev_supply: uint256, _prev_staked: uint256, _value: uint256): nonpayable
+    def on_unstake(_account: address, _prev_supply: uint256, _prev_staked: uint256, _value: uint256): nonpayable
 
 interface IComponent:
     def sync_total_weight(_epoch: uint256) -> uint256: nonpayable
@@ -54,21 +54,17 @@ reward_expiration: public(uint256)
 reclaim_bounty: public(uint256)
 reclaim_recipient: public(address)
 
-total_unboosted_weight: public(uint256)
-normalized_weights: public(uint256[3]) # ll idx => normalized weight
-
-previous_total_staked: public(Staked[3])
-total_staked: public(Staked[3])
-previous_staked: public(HashMap[uint256, HashMap[address, Staked]])
-staked: public(HashMap[uint256, HashMap[address, Staked]])
-
 reward_epoch: public(uint256)
-epoch_total_rewards: public(HashMap[uint256, uint256]) # epoch => total rewards
+epoch_total_rewards: public(HashMap[uint256, uint256])
+total_unboosted_weight: public(uint256)
+
+staking: public(IERC20[3])
+normalized_weights: public(uint256[3])
 current_rewards: public(Rewards[3])
 reward_integral: public(uint256[3])
 reward_integral_snapshot: public(HashMap[uint256, HashMap[uint256, uint256]]) # ll idx => epoch => snapshot
 account_reward_integral: public(HashMap[uint256, HashMap[address, uint256]]) # ll idx => account => integral
-pending_rewards: public(HashMap[address, uint256]) # account => rewards
+pending_rewards: public(HashMap[address, uint256])
 
 event Claim:
     account: indexed(address)
@@ -84,6 +80,10 @@ event Reclaim:
 event SetDepositor:
     idx: indexed(uint256)
     depositor: address
+
+event SetStaking:
+    idx: indexed(uint256)
+    staking: address
 
 event SetDistributor:
     distributor: indexed(address)
@@ -143,7 +143,7 @@ def __init__(_distributor: address, _token: address, _lock: uint256, _depositors
         assert d != empty(address)
         assert self.depositors[d] == 0
         self.depositors[d] = i + 1
-        self.total_staked[i] = Staked(epoch=0, time=0, amount=10**12)
+        self.staking[i] = IERC20(d)
 
     self.weight_scale = Scale(numerator=4, denominator=1)
     self.reward_expiration = 26
@@ -182,25 +182,33 @@ def sync_total_weight(_epoch: uint256) -> uint256:
     return weight * scale.numerator // scale.denominator
 
 @external
-def on_stake(_caller: address, _account: address, _value: uint256):
+def on_stake(_caller: address, _account: address, _prev_supply: uint256, _prev_staked: uint256, _amount: uint256):
     """
-    @notice Triggered by a hook upon staking of LL tokens
+    @notice Triggered by the hook upon staking of tokens
     @param _caller Originator of the tokens
     @param _account Recipient of the staked tokens
-    @param _value Amount of tokens to stake
+    @param _prev_supply Total token supply before stake
+    @param _prev_staked Staked balance of recipient before stake
+    @param _amount Amount of tokens to stake
     """
     idx: uint256 = self.depositors[msg.sender] - 1
-    self._update_staked(_account, idx, _value, INCREMENT)
+    assert self._sync_rewards()
+    assert self._sync_integral(idx, _prev_supply)
+    self._sync_account_integral(idx, _account, _prev_staked)
 
 @external
-def on_unstake(_account: address, _value: uint256):
+def on_unstake(_account: address, _prev_supply: uint256, _prev_staked: uint256, _amount: uint256):
     """
     @notice Triggered by the hook upon unstaking of tokens
     @param _account Originator of the staked tokens
-    @param _value Amount of tokens to unstake
+    @param _prev_supply Total token supply before unstake
+    @param _prev_staked Staked balance of originator before unstake
+    @param _amount Amount of tokens to unstake
     """
     idx: uint256 = self.depositors[msg.sender] - 1
-    self._update_staked(_account, idx, _value, DECREMENT)
+    assert self._sync_rewards()
+    assert self._sync_integral(idx, _prev_supply)
+    self._sync_account_integral(idx, _account, _prev_staked)
 
 @external
 def claim(_account: address) -> uint256:
@@ -212,10 +220,11 @@ def claim(_account: address) -> uint256:
     assert self.claimers[msg.sender]
     assert self._sync_rewards()
     for i: uint256 in range(3):
-        staked: uint256 = self.staked[i][_account].amount
+        staked: uint256 = staticcall self.staking[i].balanceOf(_account)
         if staked > 0:
-            self._sync_integral(i)
-            self._sync_account_integral(i, _account)
+            supply: uint256 = staticcall self.staking[i].totalSupply()
+            self._sync_integral(i, supply)
+            self._sync_account_integral(i, _account, staked)
 
     pending: uint256 = self.pending_rewards[_account]
     if pending > 0:
@@ -234,9 +243,10 @@ def reclaim(_idx: uint256, _account: address) -> (uint256, uint256):
     @return Tuple with amount of rewards reclaimed and bounty amount received
     """
     assert self._sync_rewards()
-    assert self._sync_integral(_idx)
+    supply: uint256 = staticcall self.staking[_idx].totalSupply()
+    assert self._sync_integral(_idx, supply)
 
-    staked: uint256 = self.staked[_idx][_account].amount
+    staked: uint256 = staticcall self.staking[_idx].balanceOf(_account)
     if staked == 0:
         return 0, 0
 
@@ -282,9 +292,11 @@ def sync_rewards(_idx: uint256, _account: address = empty(address)) -> bool:
     assert _idx < 3
     assert self._sync_rewards()
 
-    synced: bool = self._sync_integral(_idx)
+    supply: uint256 = staticcall self.staking[_idx].totalSupply()
+    synced: bool = self._sync_integral(_idx, supply)
     if _account != empty(address):
-        self._sync_account_integral(_idx, _account)
+        staked: uint256 = staticcall self.staking[_idx].balanceOf(_account)
+        self._sync_account_integral(_idx, _account, staked)
     return synced
 
 @external
@@ -304,6 +316,20 @@ def set_depositor(_previous: address, _depositor: address):
     self.depositors[_previous] = 0
     self.depositors[_depositor] = number
     log SetDepositor(idx=number - 1, depositor=_depositor)
+
+@external
+def set_staking(_idx: uint256, _staking: address):
+    """
+    @notice Set a liquid locker staking address
+    @param _idx Liquid locker index
+    @param _staking New depositor address
+    @dev Can only be called by management
+    @dev Caller is responsible for ensuring consistency between the depositor and staking contract
+    """
+    assert msg.sender == self.management
+
+    self.staking[_idx] = IERC20(_staking)
+    log SetStaking(idx=_idx, staking=_staking)
 
 @external
 def set_distributor(_distributor: address):
@@ -417,58 +443,6 @@ def _epoch() -> uint256:
     return unsafe_div(block.timestamp - genesis, EPOCH_LENGTH)
 
 @internal
-def _update_total_staked(_idx: uint256, _amount: uint256, _increment: bool):
-    """
-    @notice Increase/decrease the total staked amount of a liquid locker
-    """
-    assert self._sync_rewards()
-    assert self._sync_integral(_idx)
-
-    current_epoch: uint256 = self._epoch()
-    staked: Staked = self.total_staked[_idx]
-
-    # snapshot
-    if current_epoch > staked.epoch:
-        self.previous_total_staked[_idx] = staked
-
-    if _increment == INCREMENT:
-        staked.amount += _amount
-    else:
-        staked.amount -= _amount
-
-    staked.epoch = current_epoch
-    self.total_staked[_idx] = staked
-
-@internal
-def _update_staked(_account: address, _idx: uint256, _amount: uint256, _increment: bool):
-    """
-    @notice Increase/decrease the staked amount of a liquid locker of a specific account
-    """
-    self._update_total_staked(_idx, _amount, _increment)
-    self._sync_account_integral(_idx, _account)
-
-    current_epoch: uint256 = self._epoch()
-    staked: Staked = self.staked[_idx][_account]
-
-    # snapshot
-    if current_epoch > staked.epoch:
-        self.previous_staked[_idx][_account] = staked
-
-    if _increment == INCREMENT:
-        if staked.time > 0:
-            staked.time = min(block.timestamp - staked.time, RAMP_LENGTH)
-        # amount-weighted average time
-        staked.time = block.timestamp - (staked.amount * staked.time) // (staked.amount + _amount)
-        staked.amount += _amount
-    else:
-        staked.amount -= _amount
-        if staked.amount == 0:
-            staked.time = 0
-
-    staked.epoch = current_epoch
-    self.staked[_idx][_account] = staked
-
-@internal
 def _sync_rewards() -> bool:
     """
     @notice Synchronize rewards by repeatedly claiming from the distributor
@@ -487,11 +461,13 @@ def _sync_rewards() -> bool:
     return reward_epoch == current_epoch
 
 @internal
-def _sync_integral(_idx: uint256) -> bool:
+def _sync_integral(_idx: uint256, _supply: uint256) -> bool:
     """
     @notice Synchronize integral for a specific liquid locker
             Rewards must be synced before calling
     """
+    supply: uint256 = _supply + 10**12
+
     current_epoch: uint256 = self._epoch()
     unlocked: uint256 = 0
     ew: Rewards = self.current_rewards[_idx]
@@ -500,7 +476,6 @@ def _sync_integral(_idx: uint256) -> bool:
     last_streamed: uint256 = (ew.timestamp % EPOCH_LENGTH) * ew.rewards // EPOCH_LENGTH
     ew.timestamp = block.timestamp - genesis
     integral: uint256 = self.reward_integral[_idx]
-    total_staked: uint256 = self.total_staked[_idx].amount
     
     if not synced:
         # rollover to new epoch. first finalize the last one
@@ -508,7 +483,7 @@ def _sync_integral(_idx: uint256) -> bool:
         last_streamed = 0
 
         # save integral snapshot
-        self.reward_integral_snapshot[_idx][epoch] = integral + unlocked * PRECISION // total_staked
+        self.reward_integral_snapshot[_idx][epoch] = integral + unlocked * PRECISION // supply
 
         # fast forward through any other completed epochs
         weight: uint256 = self.normalized_weights[_idx]
@@ -526,7 +501,7 @@ def _sync_integral(_idx: uint256) -> bool:
                     break
                 else:
                     unlocked += epoch_rewards
-                    self.reward_integral_snapshot[_idx][epoch] = integral + unlocked * PRECISION // total_staked
+                    self.reward_integral_snapshot[_idx][epoch] = integral + unlocked * PRECISION // supply
 
             if synced:
                 # fully caught up
@@ -546,20 +521,19 @@ def _sync_integral(_idx: uint256) -> bool:
         return synced
 
     # update integral
-    self.reward_integral[_idx] = integral + unlocked * PRECISION // total_staked
+    self.reward_integral[_idx] = integral + unlocked * PRECISION // supply
 
     return synced
 
 @internal
-def _sync_account_integral(_idx: uint256, _account: address):
+def _sync_account_integral(_idx: uint256, _account: address, _balance: uint256):
     """
     @notice Synchronize integral for a specific liquid locker and account
             Global integral must be synced before calling
     """
-    staked: uint256 = self.staked[_idx][_account].amount
     integral: uint256 = self.reward_integral[_idx]
     pending: uint256 = self.pending_rewards[_account]
-    if staked > 0:
-        pending += (integral - self.account_reward_integral[_idx][_account]) * staked // PRECISION
+    if _balance > 0:
+        pending += (integral - self.account_reward_integral[_idx][_account]) * _balance // PRECISION
         self.pending_rewards[_account] = pending
     self.account_reward_integral[_idx][_account] = integral

@@ -275,48 +275,68 @@ def test_transfer_hook(deployer, alice, bob, yfi, dhooks, dstaking):
     yfi.approve(dstaking, 3 * UNIT, sender=alice)
     dstaking.deposit(3 * UNIT, sender=alice)
 
-    assert dhooks.last_transfer() == (ZERO_ADDRESS, ZERO_ADDRESS, ZERO_ADDRESS, 0)
+    assert dhooks.last_transfer() == (ZERO_ADDRESS, ZERO_ADDRESS, ZERO_ADDRESS, 0, 0, 0, 0)
     dstaking.transfer(bob, UNIT, sender=alice)
-    assert dhooks.last_transfer() == (alice, alice, bob, UNIT)
+    assert dhooks.last_transfer() == (alice, alice, bob, 3 * UNIT, 3 * UNIT, 0, UNIT)
+    dstaking.transfer(bob, UNIT, sender=alice)
+    assert dhooks.last_transfer() == (alice, alice, bob, 3 * UNIT, 2 * UNIT, UNIT, UNIT)
 
 def test_transfer_from_hook(deployer, alice, bob, yfi, dhooks, dstaking):
     # transfering with allowance triggers the hook
     yfi.mint(alice, 3 * UNIT, sender=deployer)
     yfi.approve(dstaking, 3 * UNIT, sender=alice)
     dstaking.deposit(3 * UNIT, sender=alice)
-    dstaking.approve(bob, UNIT, sender=alice)
+    dstaking.approve(bob, 2 * UNIT, sender=alice)
 
-    assert dhooks.last_transfer() == (ZERO_ADDRESS, ZERO_ADDRESS, ZERO_ADDRESS, 0)
+    assert dhooks.last_transfer() == (ZERO_ADDRESS, ZERO_ADDRESS, ZERO_ADDRESS, 0, 0, 0, 0)
     dstaking.transferFrom(alice, bob, UNIT, sender=bob)
-    assert dhooks.last_transfer() == (bob, alice, bob, UNIT)
+    assert dhooks.last_transfer() == (bob, alice, bob, 3 * UNIT, 3 * UNIT, 0, UNIT)
+    dstaking.transferFrom(alice, bob, UNIT, sender=bob)
+    assert dhooks.last_transfer() == (bob, alice, bob, 3 * UNIT, 2 * UNIT, UNIT, UNIT)
 
-def test_stake_hook(deployer, alice, yfi, dhooks, dstaking):
+def test_stake_hook(deployer, alice, bob, yfi, dhooks, dstaking):
     # staking triggers the hook
-    yfi.mint(alice, UNIT, sender=deployer)
-    yfi.approve(dstaking, UNIT, sender=alice)
+    yfi.mint(alice, 3 * UNIT, sender=deployer)
+    yfi.approve(dstaking, 3 * UNIT, sender=alice)
 
-    assert dhooks.last_stake() == (ZERO_ADDRESS, ZERO_ADDRESS, 0)
+    assert dhooks.last_stake() == (ZERO_ADDRESS, ZERO_ADDRESS, 0, 0, 0)
+    dstaking.deposit(2 * UNIT, sender=alice)
+    assert dhooks.last_stake() == (alice, alice, 0, 0, 2 * UNIT)
     dstaking.deposit(UNIT, sender=alice)
-    assert dhooks.last_stake() == (alice, alice, UNIT)
+    assert dhooks.last_stake() == (alice, alice, 2 * UNIT, 2 * UNIT, UNIT)
+
+    yfi.mint(bob, UNIT, sender=deployer)
+    yfi.approve(dstaking, UNIT, sender=bob)
+    dstaking.deposit(UNIT, sender=bob)
+    assert dhooks.last_stake() == (bob, bob, 3 * UNIT, 0, UNIT)
 
 def test_stake_for_hook(deployer, alice, bob, yfi, dhooks, dstaking):
     # staking for someone else triggers the hook
-    yfi.mint(alice, UNIT, sender=deployer)
-    yfi.approve(dstaking, UNIT, sender=alice)
+    yfi.mint(alice, 3 * UNIT, sender=deployer)
+    yfi.approve(dstaking, 3 * UNIT, sender=alice)
 
-    assert dhooks.last_stake() == (ZERO_ADDRESS, ZERO_ADDRESS, 0)
+    assert dhooks.last_stake() == (ZERO_ADDRESS, ZERO_ADDRESS, 0, 0, 0)
+    dstaking.deposit(2 * UNIT, bob, sender=alice)
+    assert dhooks.last_stake() == (alice, bob, 0, 0, 2 * UNIT)
     dstaking.deposit(UNIT, bob, sender=alice)
-    assert dhooks.last_stake() == (alice, bob, UNIT)
+    assert dhooks.last_stake() == (alice, bob, 2 * UNIT, 2 * UNIT, UNIT)
 
-def test_unstake_hook(deployer, alice, yfi, dhooks, dstaking):
+def test_unstake_hook(deployer, alice, bob, yfi, dhooks, dstaking):
     # unstaking triggers the hook
     yfi.mint(alice, 3 * UNIT, sender=deployer)
     yfi.approve(dstaking, 3 * UNIT, sender=alice)
     dstaking.deposit(3 * UNIT, sender=alice)
 
-    assert dhooks.last_unstake() == (ZERO_ADDRESS, 0)
+    assert dhooks.last_unstake() == (ZERO_ADDRESS, 0, 0, 0)
     dstaking.unstake(UNIT, sender=alice)
-    assert dhooks.last_unstake() == (alice, UNIT)
+    assert dhooks.last_unstake() == (alice, 3 * UNIT, 3 * UNIT, UNIT)
+
+    yfi.mint(bob, UNIT, sender=deployer)
+    yfi.approve(dstaking, UNIT, sender=bob)
+    dstaking.deposit(UNIT, sender=bob)
+
+    dstaking.unstake(UNIT, sender=alice)
+    assert dhooks.last_unstake() == (alice, 3 * UNIT, 2 * UNIT, UNIT)
 
 def test_set_hooks(project, deployer, dstaking, dhooks):
     # hooks contract can be changed

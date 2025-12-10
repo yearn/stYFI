@@ -18,8 +18,8 @@ from ethereum.ercs import IERC20
 from ethereum.ercs import IERC4626
 
 interface IHooks:
-    def on_stake(_caller: address, _account: address, _value: uint256): nonpayable
-    def on_unstake(_account: address, _value: uint256): nonpayable
+    def on_stake(_caller: address, _account: address, _prev_supply: uint256, _prev_staked: uint256, _value: uint256): nonpayable
+    def on_unstake(_account: address, _prev_supply: uint256, _prev_staked: uint256, _value: uint256): nonpayable
 
 implements: IERC4626
 
@@ -138,8 +138,10 @@ def unstake(_shares: uint256):
     """
     assert _shares > 0
 
-    self.totalSupply -= _shares
-    self.balanceOf[msg.sender] -= _shares
+    prev_supply: uint256 = self.totalSupply
+    prev_balance: uint256 = self.balanceOf[msg.sender]
+    self.totalSupply = prev_supply - _shares
+    self.balanceOf[msg.sender] = prev_balance - _shares
 
     time: uint256 = 0
     total: uint256 = 0
@@ -147,7 +149,7 @@ def unstake(_shares: uint256):
     time, total, claimed = self._unpack(self.packed_streams[msg.sender])
     self.packed_streams[msg.sender] = self._pack(block.timestamp, total - claimed + _shares, 0)
 
-    extcall self.hooks.on_unstake(msg.sender, _shares)
+    extcall self.hooks.on_unstake(msg.sender, prev_supply, prev_balance, _shares)
 
     log Transfer(sender=msg.sender, receiver=empty(address), value=_shares)
 
@@ -334,10 +336,12 @@ def _stake(_receiver: address, _shares: uint256):
     """
     assert _receiver != empty(address) and _receiver != self
 
-    self.totalSupply += _shares
-    self.balanceOf[_receiver] += _shares
+    prev_supply: uint256 = self.totalSupply
+    prev_balance: uint256 = self.balanceOf[_receiver]
+    self.totalSupply = prev_supply + _shares
+    self.balanceOf[_receiver] = prev_balance + _shares
 
-    extcall self.hooks.on_stake(msg.sender, _receiver, _shares)
+    extcall self.hooks.on_stake(msg.sender, _receiver, prev_supply, prev_balance, _shares)
 
     log Deposit(sender=msg.sender, owner=_receiver, assets=_shares * scale, shares=_shares)
     log Transfer(sender=empty(address), receiver=_receiver, value=_shares)

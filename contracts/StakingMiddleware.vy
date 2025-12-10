@@ -11,9 +11,9 @@
 """
 
 interface IHooks:
-    def on_transfer(_caller: address, _from: address, _to: address, _value: uint256): nonpayable
-    def on_stake(_caller: address, _account: address, _value: uint256): nonpayable
-    def on_unstake(_account: address, _value: uint256): nonpayable
+    def on_transfer(_caller: address, _from: address, _to: address, _supply: uint256, _prev_staked_from: uint256, _prev_staked_to: uint256, _value: uint256): nonpayable
+    def on_stake(_caller: address, _account: address, _prev_supply: uint256, _prev_staked: uint256, _value: uint256): nonpayable
+    def on_unstake(_account: address, _prev_supply: uint256, _prev_staked: uint256, _value: uint256): nonpayable
     def instant_withdrawal(_account: address) -> bool: view
 
 implements: IHooks
@@ -52,41 +52,48 @@ def __init__(_upstream: address, _downstream: address):
     self.management = msg.sender
 
 @external
-def on_transfer(_caller: address, _from: address, _to: address, _value: uint256):
+def on_transfer(_caller: address, _from: address, _to: address, _supply: uint256, _prev_staked_from: uint256, _prev_staked_to: uint256, _amount: uint256):
     """
     @notice Triggered by the hook upon transfer of tokens
     @param _caller Originator of the transfer
     @param _from Sender of the token
     @param _to Recipient of the tokens
-    @param _value Amount of tokens to transfer
+    @param _supply Total token supply
+    @param _prev_staked_from Staked balance of sender before transfer
+    @param _prev_staked_to Staked balance of recipient before transfer
+    @param _amount Amount of tokens to transfer
     """
     assert msg.sender == upstream
     assert not self.blacklist[_from]
 
-    extcall downstream.on_transfer(_caller, _from, _to, _value)
+    extcall downstream.on_transfer(_caller, _from, _to, _supply, _prev_staked_from, _prev_staked_to, _amount)
 
 @external
-def on_stake(_caller: address, _account: address, _value: uint256):
+def on_stake(_caller: address, _account: address, _prev_supply: uint256, _prev_staked: uint256, _amount: uint256):
     """
     @notice Triggered by the hook upon staking of tokens
     @param _caller Originator of the tokens
     @param _account Recipient of the staked tokens
-    @param _value Amount of tokens to stake
+    @param _prev_supply Total token supply before stake
+    @param _prev_staked Staked balance of recipient before stake
+    @param _amount Amount of tokens to stake
     """
     assert msg.sender == upstream
 
-    extcall downstream.on_stake(_caller, _account, _value)
+    extcall downstream.on_stake(_caller, _account, _prev_supply, _prev_staked, _amount)
 
 @external
-def on_unstake(_account: address, _value: uint256):
+def on_unstake(_account: address, _prev_supply: uint256, _prev_staked: uint256, _amount: uint256):
     """
     @notice Triggered by the hook upon unstaking of tokens
     @param _account Originator of the staked tokens
-    @param _value Amount of tokens to unstake
+    @param _prev_supply Total token supply before unstake
+    @param _prev_staked Staked balance of originator before unstake
+    @param _amount Amount of tokens to unstake
     """
     assert msg.sender == upstream
 
-    extcall downstream.on_unstake(_account, _value)
+    extcall downstream.on_unstake(_account, _prev_supply, _prev_staked, _amount)
 
 @external
 def set_instant_withdrawal(_account: address, _instant: bool):
