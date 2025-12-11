@@ -74,8 +74,8 @@ event PendingManagement:
 event SetManagement:
     management: indexed(address)
 
-SMALL_MASK: constant(uint256) = 2**32 - 1
-BIG_MASK: constant(uint256) = 2**112 - 1
+SMALL_MASK: constant(uint256) = 2**40 - 1
+BIG_MASK: constant(uint256) = 2**108 - 1
 STREAM_DURATION: constant(uint256) = 14 * 24 * 60 * 60
 
 @deploy
@@ -508,7 +508,7 @@ def _pack(_a: uint256, _b: uint256, _c: uint256) -> uint256:
     @notice Pack a small value and two big values into a single storage slot
     """
     assert _a <= SMALL_MASK and _b <= BIG_MASK and _c <= BIG_MASK
-    return (_a << 224) | (_b << 112) | _c
+    return (_a << 216) | (_b << 108) | _c
 
 @internal
 @pure
@@ -516,4 +516,4 @@ def _unpack(_packed: uint256) -> (uint256, uint256, uint256):
     """
     @notice Unpack a small value and two big values from a single storage slot
     """
-    return _packed >> 224, (_packed >> 112) & BIG_MASK, _packed & BIG_MASK
+    return _packed >> 216, (_packed >> 108) & BIG_MASK, _packed & BIG_MASK
