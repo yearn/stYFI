@@ -27,6 +27,7 @@ asset: public(immutable(address))
 staking: public(immutable(IERC4626))
 management: public(address)
 pending_management: public(address)
+killed: public(bool)
 hooks: public(IHooks)
 
 totalSupply: public(uint256)
@@ -60,6 +61,9 @@ event Withdraw:
     owner: indexed(address)
     assets: uint256
     shares: uint256
+
+event SetKilled:
+    killed: bool
 
 event SetHooks:
     hooks: indexed(address)
@@ -312,6 +316,18 @@ def streams(_account: address) -> (uint256, uint256, uint256):
     return self._unpack(self.packed_streams[_account])
 
 @external
+def set_killed(_killed: bool):
+    """
+    @notice Set the killed status
+    @param _killed True: kill the vault, disabling deposits
+    @dev Can only be called by management
+    """
+    assert msg.sender == self.management
+
+    self.killed = _killed
+    log SetKilled(killed=_killed)
+
+@external
 def set_hooks(_hooks: address):
     """
     @notice Set the hooks address
@@ -368,6 +384,7 @@ def _stake(_receiver: address, _value: uint256):
     """
     @notice Mint shares, take underlying tokens from caller and deposit into staking contract
     """
+    assert not self.killed
     assert _receiver != empty(address) and _receiver != self
 
     prev_supply: uint256 = self.totalSupply

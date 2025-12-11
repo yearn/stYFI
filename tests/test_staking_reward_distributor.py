@@ -92,6 +92,8 @@ def test_transfer(chain, alice, bob, yfi, styfi, styfi_distributor):
     assert styfi_distributor.total_weight_entries(0) == (0, DUST + 3 * UNIT)
 
 def test_rewards(chain, deployer, alice, bob, charlie, reward, yfi, styfi, distributor, genesis, styfi_distributor, claimer):
+    styfi_distributor.set_claimer(alice, True, sender=deployer)
+
     # deposit small amount to test precision and make it easier to check math
     yfi.mint(alice, 3 * DUST, sender=alice)
     yfi.approve(styfi, 3 * DUST, sender=alice)
@@ -144,7 +146,6 @@ def test_rewards(chain, deployer, alice, bob, charlie, reward, yfi, styfi, distr
         assert claimer.claim(charlie, sender=alice).return_value == UNIT // 2
         assert reward.balanceOf(charlie) == UNIT // 2
 
-    styfi_distributor.set_claimer(alice, True, sender=deployer)
     chain.pending_timestamp = ts
     styfi_distributor.claim(alice, sender=alice)
     assert styfi_distributor.pending_rewards(alice) == 0

@@ -71,6 +71,18 @@ def test_deposit_excessive(deployer, alice, yfi, dstaking):
     with reverts():
         dstaking.deposit(2 * UNIT, sender=alice)
 
+def test_deposit_killed(deployer, alice, yfi, dstaking):
+    # cant deposit if killed
+    yfi.mint(alice, UNIT, sender=deployer)
+    yfi.approve(dstaking, UNIT, sender=alice)
+    
+    dstaking.set_killed(True, sender=deployer)
+    with reverts():
+        dstaking.deposit(UNIT, sender=alice)
+    
+    dstaking.set_killed(False, sender=deployer)
+    dstaking.deposit(UNIT, sender=alice)
+
 def test_unstake(chain, deployer, alice, yfi, dstaking):
     # unstaking starts a stream
     yfi.mint(alice, 3 * UNIT, sender=deployer)
@@ -338,6 +350,18 @@ def test_unstake_hook(deployer, alice, bob, yfi, dhooks, dstaking):
     dstaking.unstake(UNIT, sender=alice)
     assert dhooks.last_unstake() == (alice, 3 * UNIT, 2 * UNIT, UNIT)
 
+def test_set_killed(deployer, dstaking):
+    # vault can be killed
+    assert not dstaking.killed()
+    dstaking.set_killed(True, sender=deployer)
+    assert dstaking.killed()
+
+def test_set_killed_permission(deployer, alice, dstaking):
+    # only management can kill vault
+    with reverts():
+        dstaking.set_killed(True, sender=alice)
+    dstaking.set_killed(True, sender=deployer)
+
 def test_set_hooks(project, deployer, dstaking, dhooks):
     # hooks contract can be changed
     dhooks2 = project.MockHooks.deploy(sender=deployer)
@@ -350,6 +374,7 @@ def test_set_hooks_permission(project, deployer, alice, dstaking):
     hooks2 = project.MockHooks.deploy(sender=deployer)
     with reverts():
         dstaking.set_hooks(hooks2, sender=alice)
+    dstaking.set_hooks(hooks2, sender=deployer)
 
 def test_set_management(deployer, alice, dstaking):
     # management can propose a replacement
