@@ -194,6 +194,7 @@ def totalAssets() -> uint256:
     """
     @notice Get the total amount of assets in the vault
     @return Total amount of assets
+    @dev Does not include any assets that are currently being unstaked
     """
     return self.totalSupply
 
