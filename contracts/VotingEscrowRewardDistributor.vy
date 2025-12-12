@@ -14,15 +14,15 @@
 
 from ethereum.ercs import IERC20
 
-interface ISnapshot:
-    def locked(_account: address) -> Lock: view
-
 interface IComponent:
     def sync_total_weight(_epoch: uint256) -> uint256: nonpayable
 
 interface IDistributor:
     def genesis() -> uint256: view
     def claim() -> (uint256, uint256, uint256): nonpayable
+
+interface IVotingEscrow:
+    def locked(_account: address) -> (uint256, uint256): view
 
 implements: IComponent
 
@@ -45,10 +45,10 @@ struct Weight:
 
 genesis: public(immutable(uint256))
 token: public(immutable(IERC20))
+veyfi: public(immutable(IVotingEscrow))
 management: public(address)
 pending_management: public(address)
 
-snapshot: public(ISnapshot)
 distributor: public(IDistributor)
 weight_scale: public(Scale)
 claimers: public(HashMap[address, bool])
@@ -89,7 +89,10 @@ event Report:
     bounty: uint256
 
 event SetSnapshot:
-    snapshot: indexed(address)
+    account: indexed(address)
+    amount: uint256
+    boost: uint256
+    unlock: uint256
 
 event SetDistributor:
     distributor: indexed(address)
@@ -122,14 +125,16 @@ MAX_NUM_EPOCHS: constant(uint256) = 104
 BOUNTY_PRECISION: constant(uint256) = 10_000
 
 @deploy
-def __init__(_distributor: address, _token: address):
+def __init__(_distributor: address, _token: address, _veyfi: address):
     """
     @notice Constructor
     @param _distributor The distributor address
     @param _token The address of the reward token
+    @param _veyfi veYFI address
     """
     genesis = staticcall IDistributor(_distributor).genesis()
     token = IERC20(_token)
+    veyfi = IVotingEscrow(_veyfi)
     self.management = msg.sender
     self.distributor = IDistributor(_distributor)
 
@@ -173,22 +178,22 @@ def migrate():
     current: uint256 = self._epoch()
     assert self._sync_total_weights(current)
 
-    lock: Lock = staticcall self.snapshot.locked(msg.sender)
-    amount: uint256 = lock.amount
+    amount: uint256 = 0
+    unlock_time: uint256 = 0
+    amount, unlock_time = self._check_lock(msg.sender)
     assert amount > 0
 
-    unlock_epoch: uint256 = (lock.unlock_time - genesis) // EPOCH_LENGTH
-    assert unlock_epoch > current and unlock_epoch < MAX_NUM_EPOCHS
-
-    self.locks[msg.sender] = lock
+    boost_epochs: uint256 = self.locks[msg.sender].boost_epochs
+    unlock_epoch: uint256 = (unlock_time - genesis) // EPOCH_LENGTH
+    assert unlock_epoch > current
 
     # add lock to total
     slope: uint256 = amount // MAX_NUM_EPOCHS
-    self.total_weights[current].weight += amount + (lock.boost_epochs - current) * slope
+    self.total_weights[current].weight += amount + (boost_epochs - current) * slope
     self.total_weights[current].slope += slope
 
     # schedule unlock
-    self.unlocks[unlock_epoch].amount += amount + (lock.boost_epochs - unlock_epoch) * slope
+    self.unlocks[unlock_epoch].amount += amount + (boost_epochs - unlock_epoch) * slope
     self.unlocks[unlock_epoch].slope_change += slope
 
     # set claim time to beginning of next epoch
@@ -255,8 +260,7 @@ def report(_account: address) -> (uint256, uint256):
 
     # must have early exited
     assert epoch < unlock_epoch
-    snapshot: Lock = staticcall self.snapshot.locked(_account)
-    assert snapshot.amount == 0
+    assert self._check_lock(_account)[0] == 0
 
     # claim all rewards up until end of this epoch
     rewards: uint256 = self._claim(_account, genesis + (epoch + 1) * EPOCH_LENGTH)
@@ -290,17 +294,36 @@ def sync_rewards() -> bool:
     return self._sync_rewards(self._epoch())
 
 @external
-def set_snapshot(_snapshot: address):
+@view
+def check_lock(_account: address) -> (uint256, uint256):
     """
-    @notice Set new snapshot address
-    @param _snapshot Snapshot address
-    @dev Can only be called by management
-    @dev Caller is responsible for ensuring consistency between the old and new snapshot
+    @notice Check whether a snapshotted veYFI lock is still active
+
+    @return Tuple with snapshotted amount and unlock time, if lock is still active.
+            If lock is no longer active, returns a tuple of zeroes
+    """
+    return self._check_lock(_account)
+
+@external
+def set_snapshot(_account: address, _amount: uint256, _boost: uint256, _unlock: uint256):
+    """
+    @notice Set a veYFI position snapshot
+    @param _account Account to set snapshot for
+    @param _amount Amount of YFI in the lock
+    @param _boost Boost at time of snapshot, in epochs
+    @param _unlock Timestamp of unlock
+    @dev Can only called by management
+    @dev Can only be set if position has not been migrated yet
     """
     assert msg.sender == self.management
+    assert self.last_claimed[_account] == 0
 
-    self.snapshot = ISnapshot(_snapshot)
-    log SetSnapshot(snapshot=_snapshot)
+    unlock_epoch: uint256 = (_unlock - genesis) // EPOCH_LENGTH
+    assert unlock_epoch < MAX_NUM_EPOCHS
+    assert _boost >= unlock_epoch
+
+    self.locks[_account] = Lock(amount=_amount, boost_epochs=_boost, unlock_time=_unlock)
+    log SetSnapshot(account=_account, amount=_amount, boost=_boost, unlock=_unlock)
 
 @external
 def set_distributor(_distributor: address):
@@ -404,6 +427,23 @@ def accept_management():
 @view
 def _epoch() -> uint256:
     return unsafe_div(block.timestamp - genesis, EPOCH_LENGTH)
+
+@internal
+@view
+def _check_lock(_account: address) -> (uint256, uint256):
+    """
+    @notice Checks whether a snapshotted lock is still active
+    """
+    snapshot_amount: uint256 = self.locks[_account].amount
+    snapshot_unlock_time: uint256 = self.locks[_account].unlock_time
+
+    amount: uint256 = 0
+    end: uint256 = 0
+    amount, end = staticcall veyfi.locked(_account)
+    if amount < snapshot_amount or end < snapshot_unlock_time:
+        return 0, 0
+
+    return snapshot_amount, snapshot_unlock_time
 
 @internal
 def _sync_total_weights(_current: uint256) -> bool:
