@@ -70,7 +70,7 @@ def test_stake(chain, alice, yfi, styfi, delegated, delegated_distributor):
     assert yfi.balanceOf(styfi) == 4 * UNIT
     assert styfi.balanceOf(delegated) == 4 * UNIT
 
-def test_unstake(chain, alice, yfi, styfi, styfi_distributor, delegated, delegated_distributor):
+def test_unstake(chain, alice, yfi, styfi, delegated, delegated_distributor):
     yfi.mint(alice, 4 * UNIT, sender=alice)
     yfi.approve(delegated, 4 * UNIT, sender=alice)
 
@@ -81,6 +81,7 @@ def test_unstake(chain, alice, yfi, styfi, styfi_distributor, delegated, delegat
 
     # unstake
     ts = chain.pending_timestamp
+    chain.pending_timestamp = ts
     delegated.unstake(UNIT, sender=alice)
     assert yfi.balanceOf(styfi) == 3 * UNIT
     assert yfi.balanceOf(delegated) == UNIT
@@ -92,6 +93,7 @@ def test_unstake(chain, alice, yfi, styfi, styfi_distributor, delegated, delegat
     assert delegated.maxWithdraw(alice) == UNIT // 2
     
     with chain.isolate():
+        chain.pending_timestamp = ts + EPOCH_LENGTH // 2
         delegated.withdraw(UNIT // 2, sender=alice)
         assert yfi.balanceOf(alice) == UNIT // 2
         assert delegated.maxWithdraw(alice) == 0
@@ -100,6 +102,7 @@ def test_unstake(chain, alice, yfi, styfi, styfi_distributor, delegated, delegat
     chain.mine()
     assert delegated.maxWithdraw(alice) == UNIT
     
+    chain.pending_timestamp = ts + 2 * EPOCH_LENGTH
     delegated.withdraw(UNIT, sender=alice)
     assert yfi.balanceOf(alice) == UNIT
     assert delegated.maxWithdraw(alice) == 0

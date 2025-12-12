@@ -235,6 +235,7 @@ def test_unstake_instant_toggle(chain, deployer, alice, yfi, hooks, staking):
     assert staking.maxWithdraw(alice) == 0
     
     ts = chain.pending_timestamp
+    chain.pending_timestamp = ts
     staking.unstake(2 * UNIT, sender=alice)
 
     hooks.set_instant_withdrawal(alice, True, sender=deployer)
