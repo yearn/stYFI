@@ -79,6 +79,7 @@ def __init__(_genesis: uint256, _yfi: address, _lock: uint256, _tokens: address[
     lock = _lock
     self.management = msg.sender
     for i: uint256 in range(3):
+        assert _scales[i] > 0
         self.tokens[i] = IERC20(_tokens[i])
     self.scales = _scales
 
