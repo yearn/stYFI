@@ -23,6 +23,10 @@ interface IStakingDistributor:
 
 implements: IHooks
 
+struct IntegralSnapshot:
+    epoch: uint256
+    integral: uint256
+
 genesis: public(immutable(uint256))
 token: public(immutable(IERC20))
 management: public(address)
@@ -33,14 +37,26 @@ staking: public(IERC20)
 distributor: public(IStakingDistributor)
 distributor_claim: public(address)
 claimers: public(HashMap[address, bool])
+reward_expiration: public(uint256)
+reclaim_bounty: public(uint256)
+reclaim_recipient: public(address)
 
 reward_integral: public(uint256)
 account_reward_integral: public(HashMap[address, uint256])
 pending_rewards: public(HashMap[address, uint256])
 
+reward_integral_snapshot_max_index: public(uint256)
+reward_integral_snapshot: public(HashMap[uint256, IntegralSnapshot])
+
 event Claim:
     account: indexed(address)
     rewards: uint256
+
+event Reclaim:
+    caller: indexed(address)
+    account: indexed(address)
+    rewards: uint256
+    bounty: uint256
 
 event SetDepositor:
     depositor: indexed(address)
@@ -58,6 +74,11 @@ event SetClaimer:
     account: indexed(address)
     claimer: bool
 
+event SetRewardExpiration:
+    expiration: uint256
+    bounty: uint256
+    recipient: address
+
 event PendingManagement:
     management: indexed(address)
 
@@ -66,6 +87,7 @@ event SetManagement:
 
 EPOCH_LENGTH: constant(uint256) = 14 * 24 * 60 * 60
 PRECISION: constant(uint256) = 10**30
+BOUNTY_PRECISION: constant(uint256) = 10_000
 
 @deploy
 def __init__(_distributor: address, _token: address):
@@ -79,6 +101,8 @@ def __init__(_distributor: address, _token: address):
 
     self.management = msg.sender
     self.distributor = IStakingDistributor(_distributor)
+    self.reward_expiration = 26
+    self.reclaim_recipient = msg.sender
 
 @external
 def on_transfer(_caller: address, _from: address, _to: address, _supply: uint256, _prev_staked_from: uint256, _prev_staked_to: uint256, _amount: uint256):
@@ -125,6 +149,18 @@ def on_unstake(_account: address, _prev_supply: uint256, _prev_staked: uint256, 
     self._sync_account_integral(_account, _prev_staked)
 
 @external
+def sync_rewards(_account: address = empty(address)):
+    """
+    @notice Synchronize global rewards up until now
+    @param _account Also update rewards for this specific account (optional)
+    """
+    supply: uint256 = staticcall self.staking.totalSupply()
+    self._sync_integral(supply)
+    if _account != empty(address):
+        staked: uint256 = staticcall self.staking.balanceOf(_account)
+        self._sync_account_integral(_account, staked)
+
+@external
 def claim(_account: address) -> uint256:
     """
     @notice Claim rewards on behalf of an account
@@ -148,6 +184,49 @@ def claim(_account: address) -> uint256:
         log Claim(account=_account, rewards=pending)
 
     return pending
+
+@external
+def reclaim(_account: address, _idx: uint256) -> (uint256, uint256):
+    """
+    @notice Reclaim expired rewards
+    @param _account Account to reclaim rewards for
+    @param _idx The index of the snapshot
+    @return Tuple with amount of rewards reclaimed and bounty amount received
+    """
+    supply: uint256 = staticcall self.staking.totalSupply()
+    self._sync_integral(supply)
+
+    staked: uint256 = staticcall self.staking.balanceOf(_account)
+    if staked == 0:
+        return 0, 0
+
+    assert _idx <= self.reward_integral_snapshot_max_index
+
+    epoch: uint256 = self._epoch() - self.reward_expiration
+    snapshot_epoch: uint256 = self.reward_integral_snapshot[_idx].epoch
+    assert snapshot_epoch <= epoch
+
+    integral: uint256 = self.reward_integral_snapshot[_idx].integral
+    account_integral: uint256 = self.account_reward_integral[_account]
+    if account_integral >= integral:
+        return 0, 0
+
+    rewards: uint256 = (integral - account_integral) * staked // PRECISION
+    self.account_reward_integral[_account] = integral
+    if rewards == 0:
+        return 0, 0
+
+    bounty: uint256 = rewards * self.reclaim_bounty // BOUNTY_PRECISION
+    log Reclaim(caller=msg.sender, account=_account, rewards=rewards, bounty=bounty)
+
+    if bounty > 0:
+        rewards -= bounty
+        assert extcall token.transfer(msg.sender, bounty, default_return_value=True)
+
+    if rewards > 0:
+        assert extcall token.transfer(self.reclaim_recipient, rewards, default_return_value=True)
+
+    return rewards, bounty
 
 @external
 def set_depositor(_depositor: address):
@@ -214,6 +293,25 @@ def set_claimer(_account: address, _claimer: bool):
     log SetClaimer(account=_account, claimer=_claimer)
 
 @external
+def set_reward_expiration(_expiration: uint256, _bounty: uint256, _recipient: address):
+    """
+    @notice Set reward expiration parameters
+    @param _expiration Number of epochs after which rewards can be reclaimed
+    @param _bounty Bounty (in bps) to give to the caller
+    @param _recipient Recipient of the reclaimed rewards
+    @dev Can only be called by management
+    """
+    assert msg.sender == self.management
+    assert _expiration > 1
+    assert _bounty <= BOUNTY_PRECISION
+    assert _recipient != empty(address) or _bounty == BOUNTY_PRECISION
+
+    self.reward_expiration = _expiration
+    self.reclaim_bounty = _bounty
+    self.reclaim_recipient = _recipient
+    log SetRewardExpiration(expiration=_expiration, bounty=_bounty, recipient=_recipient)
+
+@external
 def set_management(_management: address):
     """
     @notice Set the pending management address.
@@ -238,6 +336,11 @@ def accept_management():
     log SetManagement(management=msg.sender)
 
 @internal
+@view
+def _epoch() -> uint256:
+    return unsafe_div(block.timestamp - genesis, EPOCH_LENGTH)
+
+@internal
 def _sync_integral(_supply: uint256):
     """
     @notice Claim rewards and update integral
@@ -247,8 +350,19 @@ def _sync_integral(_supply: uint256):
         return
 
     rewards: uint256 = extcall self.distributor.claim(self.distributor_claim)
-    if rewards > 0:
-        self.reward_integral += rewards * PRECISION // _supply
+    if rewards == 0:
+        return
+
+    integral: uint256 = self.reward_integral + rewards * PRECISION // _supply
+    self.reward_integral = integral
+
+    idx: uint256 = self.reward_integral_snapshot_max_index
+    epoch: uint256 = self._epoch()
+    if epoch > self.reward_integral_snapshot[idx].epoch:
+        idx += 1
+        self.reward_integral_snapshot_max_index = idx
+        self.reward_integral_snapshot[idx].epoch = epoch
+    self.reward_integral_snapshot[idx].integral = integral
 
 @internal
 def _sync_account_integral(_account: address, _staked: uint256) -> uint256:

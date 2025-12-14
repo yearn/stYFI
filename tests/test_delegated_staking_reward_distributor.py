@@ -148,6 +148,8 @@ def test_rewards(chain, deployer, alice, bob, charlie, reward, yfi, distributor,
     rewards = delegated_distributor.claim(alice, sender=deployer).return_value
     assert delegated_distributor.reward_integral() == integral
     assert delegated_distributor.account_reward_integral(alice) == integral
+    assert delegated_distributor.reward_integral_snapshot_max_index() == 1
+    assert delegated_distributor.reward_integral_snapshot(1) == (1, integral)
     assert rewards == UNIT // 4
 
     # fast forward to end of epoch
@@ -157,8 +159,105 @@ def test_rewards(chain, deployer, alice, bob, charlie, reward, yfi, distributor,
     integral += UNIT * 2 // 5 * PRECISION // (4 * DUST)
     assert delegated_distributor.reward_integral() == integral
     assert delegated_distributor.account_reward_integral(alice) == integral
+    assert delegated_distributor.reward_integral_snapshot_max_index() == 2
+    assert delegated_distributor.reward_integral_snapshot(2) == (2, integral)
     assert rewards == UNIT // 5
 
     rewards = delegated_distributor.claim(bob, sender=deployer).return_value
     assert delegated_distributor.account_reward_integral(bob) == integral
     assert rewards == UNIT // 5
+
+def test_reclaim(chain, deployer, alice, bob, reward, yfi, distributor, genesis, styfi_distributor, delegated, delegated_distributor):
+    # deposit small amount to test precision and make it easier to check math
+    yfi.mint(alice, 3 * DUST, sender=alice)
+    yfi.approve(delegated, 3 * DUST, sender=alice)
+
+    chain.pending_timestamp = genesis
+    delegated.deposit(DUST, sender=alice)
+    chain.pending_timestamp = genesis
+    delegated.deposit(2 * DUST, bob, sender=alice)
+
+    delegated_distributor.set_reward_expiration(3, 0, deployer, sender=deployer)
+
+    # add some rewards
+    reward.mint(alice, 1000 * UNIT, sender=alice)
+    reward.approve(distributor, 2**256 - 1, sender=alice)
+    for i in range(6):
+        distributor.deposit(i, (i + 1) * UNIT, sender=alice)
+
+    # no rewards yet in epoch 0, nothing to reclaim
+    with chain.isolate():
+        chain.pending_timestamp = genesis + 3 * EPOCH_LENGTH
+        # in epoch 3, we can reclaim rewards snapshotted in epoch 3-3=0
+        # but rewards only start in epoch 1
+        reclaimed = delegated_distributor.reclaim(alice, 0, sender=bob).return_value[0]
+        assert reclaimed == 0
+        assert reward.balanceOf(deployer) == 0
+
+    with chain.isolate():
+        # in epoch 4, we can reclaim rewards based on snapshotted state in epoch 4-3=1
+        chain.pending_timestamp = genesis + 3 * EPOCH_LENGTH // 2
+        delegated_distributor.sync_rewards(sender=deployer)
+
+        chain.pending_timestamp = genesis + 4 * EPOCH_LENGTH
+        delegated_distributor.account_reward_integral(alice) == 0
+        reclaimed = delegated_distributor.reclaim(alice, 1, sender=bob).return_value[0]
+        assert reclaimed == UNIT // 4 // 2
+        assert reward.balanceOf(deployer) == UNIT // 4 // 2
+        delegated_distributor.account_reward_integral(alice) == delegated_distributor.reward_integral_snapshot(1)[1]
+
+    with chain.isolate():
+        # in epoch 4, we can reclaim rewards based on snapshotted state in epoch 4-3=1
+        # if no snapshots exist, there's nothing to reclaim
+        chain.pending_timestamp = genesis + 4 * EPOCH_LENGTH
+        delegated_distributor.account_reward_integral(alice) == 0
+        with reverts():
+            delegated_distributor.reclaim(alice, 1, sender=bob).return_value[0]
+        reclaimed = delegated_distributor.reclaim(alice, 0, sender=bob).return_value[0]
+        assert reclaimed == 0
+        assert reward.balanceOf(deployer) == 0
+
+    with chain.isolate():
+        # in epoch 4, we can reclaim rewards based on snapshotted state in epoch 4-3=1
+        # cant claim from a future snapshot
+        chain.pending_timestamp = genesis + 5 * EPOCH_LENGTH // 2
+        delegated_distributor.sync_rewards(sender=deployer)
+
+        chain.pending_timestamp = genesis + 4 * EPOCH_LENGTH
+        delegated_distributor.account_reward_integral(alice) == 0
+        with reverts():
+            delegated_distributor.reclaim(alice, 1, sender=bob).return_value[0]
+        reclaimed = delegated_distributor.reclaim(alice, 0, sender=bob).return_value[0]
+        assert reclaimed == 0
+        assert reward.balanceOf(deployer) == 0
+
+    with chain.isolate():
+        # in epoch 5, we can reclaim rewards based on snapshotted state in epoch 5-3=2
+        chain.pending_timestamp = genesis + 3 * EPOCH_LENGTH // 2
+        delegated_distributor.sync_rewards(sender=deployer)
+
+        chain.pending_timestamp = genesis + 2 * EPOCH_LENGTH
+        delegated_distributor.sync_rewards(sender=deployer)
+
+        chain.pending_timestamp = genesis + 5 * EPOCH_LENGTH
+        delegated_distributor.account_reward_integral(alice) == 0
+        reclaimed = delegated_distributor.reclaim(alice, 2, sender=bob).return_value[0]
+        assert reclaimed == UNIT // 4
+        assert reward.balanceOf(deployer) == UNIT // 4
+        delegated_distributor.account_reward_integral(alice) == delegated_distributor.reward_integral_snapshot(2)[1]
+
+    with chain.isolate():
+        # in epoch 5, we can reclaim rewards based on snapshotted state in epoch 5-3=2
+        # but we're also able to claim from an earlier snapshot
+        chain.pending_timestamp = genesis + 3 * EPOCH_LENGTH // 2
+        delegated_distributor.sync_rewards(sender=deployer)
+
+        chain.pending_timestamp = genesis + 2 * EPOCH_LENGTH
+        delegated_distributor.sync_rewards(sender=deployer)
+
+        chain.pending_timestamp = genesis + 5 * EPOCH_LENGTH
+        delegated_distributor.account_reward_integral(alice) == 0
+        reclaimed = delegated_distributor.reclaim(alice, 1, sender=bob).return_value[0]
+        assert reclaimed == UNIT // 4 // 2
+        assert reward.balanceOf(deployer) == UNIT // 4 // 2
+        delegated_distributor.account_reward_integral(alice) == delegated_distributor.reward_integral_snapshot(1)[1]
