@@ -186,6 +186,13 @@ def test_reclaim(chain, deployer, alice, bob, reward, yfi, styfi, distributor, g
         assert reward.balanceOf(deployer) == UNIT // 4
         styfi_distributor.account_reward_integral(alice) == styfi_distributor.reward_integral_snapshot(1)
 
+    # cant reclaim if disabled
+    with chain.isolate():
+        styfi_distributor.set_reclaim_disabled(alice, True, sender=deployer)
+        chain.pending_timestamp = genesis + 4 * EPOCH_LENGTH
+        with reverts():
+            styfi_distributor.reclaim(alice, sender=bob)
+
     # update only a single epoch
     with chain.isolate():
         chain.pending_timestamp = genesis + 3 * EPOCH_LENGTH

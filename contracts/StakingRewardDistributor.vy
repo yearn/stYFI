@@ -58,6 +58,7 @@ claimers: public(HashMap[address, bool])
 reward_expiration: public(uint256)
 reclaim_bounty: public(uint256)
 reclaim_recipient: public(address)
+reclaim_disabled: public(HashMap[address, bool])
 
 total_weight_cursor: public(Cursor)
 total_weight_entries: public(HashMap[uint256, TotalWeight]) # idx => epoch | weight
@@ -95,6 +96,10 @@ event SetRewardExpiration:
     expiration: uint256
     bounty: uint256
     recipient: address
+
+event SetReclaimDisabled:
+    account: indexed(address)
+    disabled: bool
 
 event PendingManagement:
     management: indexed(address)
@@ -263,6 +268,7 @@ def reclaim(_account: address) -> (uint256, uint256):
     @param _account Account to reclaim rewards for
     @return Tuple with amount of rewards reclaimed and bounty amount received
     """
+    assert not self.reclaim_disabled[_account]
     assert self._sync_integral()
 
     staked: uint256 = staticcall self.staking.balanceOf(_account)
@@ -361,6 +367,18 @@ def set_reward_expiration(_expiration: uint256, _bounty: uint256, _recipient: ad
     self.reclaim_bounty = _bounty
     self.reclaim_recipient = _recipient
     log SetRewardExpiration(expiration=_expiration, bounty=_bounty, recipient=_recipient)
+
+@external
+def set_reclaim_disabled(_account: address, _disabled: bool):
+    """
+    @notice Set reclaim disable flag
+    @param _account Address to set the flag for
+    @param _disabled True: disable reclaims for account, False: enable reclaims
+    @dev Can only be called by management
+    """
+    assert msg.sender == self.management
+    self.reclaim_disabled[_account] = _disabled
+    log SetReclaimDisabled(account=_account, disabled=_disabled)
 
 @external
 def set_management(_management: address):
