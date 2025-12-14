@@ -105,8 +105,6 @@ EPOCH_LENGTH: constant(uint256) = 14 * 24 * 60 * 60
 RAMP_LENGTH: constant(uint256) = 4 * EPOCH_LENGTH
 BOOST_DURATION: constant(uint256) = 104
 
-INCREMENT: constant(bool) = True
-DECREMENT: constant(bool) = False
 PRECISION: constant(uint256) = 10**30
 NORM_WEIGHT_PRECISION: constant(uint256) = 10**18
 BOUNTY_PRECISION: constant(uint256) = 10_000
