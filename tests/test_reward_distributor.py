@@ -147,13 +147,16 @@ def test_set_component_scale(chain, deployer, distributor, genesis, components):
 
 def test_remove_component(chain, deployer, distributor, genesis, components):
     distributor.add_component(components[0], 3, 2, COMPONENTS_SENTINEL, sender=deployer)
+    distributor.add_component(components[1], 4, 5, COMPONENTS_SENTINEL, sender=deployer)
 
     chain.pending_timestamp = genesis + EPOCH_LENGTH
     components[0].claim_upstream(sender=deployer)
-    distributor.remove_component(components[0], COMPONENTS_SENTINEL, sender=deployer)
+    with reverts():
+        distributor.remove_component(components[0], COMPONENTS_SENTINEL, sender=deployer)
+    distributor.remove_component(components[0], components[1], sender=deployer)
     assert distributor.components(components[0]) == (ZERO_ADDRESS, 1, 0, 0)
-    assert distributor.components(COMPONENTS_SENTINEL) == (COMPONENTS_SENTINEL, 0, 0, 0)
-    assert distributor.num_components() == 0
+    assert distributor.components(components[1]) == (COMPONENTS_SENTINEL, 0, 4, 5)
+    assert distributor.num_components() == 1
 
 def test_readd_component(chain, deployer, distributor, genesis, components):
     distributor.add_component(components[0], 3, 2, COMPONENTS_SENTINEL, sender=deployer)
