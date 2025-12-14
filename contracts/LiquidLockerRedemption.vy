@@ -115,11 +115,11 @@ def fee_at(_epoch: uint256) -> uint256:
     return self._fee(_epoch)
 
 @external
-def redeem(_idx: uint256, _assets: uint256) -> uint256:
+def redeem(_idx: uint256, _ll_amount: uint256) -> uint256:
     """
     @notice Redeem a liquid locker token for YFI
     @param _idx Index of the liquid locker
-    @param _assets Amount of liquid locker tokens to redeem
+    @param _ll_amount Amount of liquid locker tokens to redeem
     @return The amount of YFI received
     """
     assert self.enabled[_idx]
@@ -127,8 +127,9 @@ def redeem(_idx: uint256, _assets: uint256) -> uint256:
     assert epoch < lock
 
     # update used capacity
-    shares: uint256 = _assets // self.scales[_idx]
-    used: uint256 = self.used[_idx] + shares
+    yfi_amount: uint256 = _ll_amount // self.scales[_idx]
+    assert yfi_amount > 0
+    used: uint256 = self.used[_idx] + yfi_amount
     assert used <= self.capacities[_idx]
     self.used[_idx] = used
 
@@ -136,40 +137,40 @@ def redeem(_idx: uint256, _assets: uint256) -> uint256:
     if recipient == empty(address):
         recipient = self
 
-    assert extcall self.tokens[_idx].transferFrom(msg.sender, recipient, _assets, default_return_value=True)
+    assert extcall self.tokens[_idx].transferFrom(msg.sender, recipient, _ll_amount, default_return_value=True)
 
     # subtract fee
     fee: uint256 = self._fee(epoch)
-    shares = shares * (PRECISION - fee) // PRECISION
+    yfi_amount = yfi_amount * (PRECISION - fee) // PRECISION
 
-    assert extcall yfi.transfer(msg.sender, shares, default_return_value=True)
-    log Redeem(token=self.tokens[_idx].address, amount=_assets, fee=fee)
-    return shares
+    assert extcall yfi.transfer(msg.sender, yfi_amount, default_return_value=True)
+    log Redeem(token=self.tokens[_idx].address, amount=_ll_amount, fee=fee)
+    return yfi_amount
 
 @external
-def exchange(_idx: uint256, _shares: uint256) -> uint256:
+def exchange(_idx: uint256, _yfi_amount: uint256) -> uint256:
     """
     @notice Exchange YFI for a liquid locker token
     @param _idx Index of the liquid locker
-    @param _shares Amount of YFI to exchange
+    @param _yfi_amount Amount of YFI to exchange
     @return The amount of liquid locker token received
     """
     assert self.enabled[_idx]
     epoch: uint256 = self._epoch()
     assert epoch < lock
 
-    self.used[_idx] -= _shares
+    self.used[_idx] -= _yfi_amount
 
     recipient: address = self.yfi_recipient
     if recipient == empty(address):
         recipient = self
 
-    assets: uint256 = _shares * self.scales[_idx]
+    ll_amount: uint256 = _yfi_amount * self.scales[_idx]
 
-    assert extcall yfi.transferFrom(msg.sender, recipient, _shares, default_return_value=True)
-    assert extcall self.tokens[_idx].transfer(msg.sender, assets, default_return_value=True)
-    log Exchange(token=self.tokens[_idx].address, amount=_shares)
-    return assets
+    assert extcall yfi.transferFrom(msg.sender, recipient, _yfi_amount, default_return_value=True)
+    assert extcall self.tokens[_idx].transfer(msg.sender, ll_amount, default_return_value=True)
+    log Exchange(token=self.tokens[_idx].address, amount=_yfi_amount)
+    return ll_amount
 
 @external
 def transfer(_token: address, _amount: uint256 = max_value(uint256)):

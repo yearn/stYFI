@@ -5,7 +5,7 @@ EPOCH_LENGTH = 14 * 24 * 60 * 60
 UNIT = 10**18
 PRECISION = 10**30
 SCALES = [1, 4, 1]
-CAPACITIES = [4 * UNIT, 2 * UNIT, UNIT]
+CAPACITIES = [4 * UNIT, 2 * UNIT, 3 * UNIT]
 
 @fixture
 def ll_tokens(project, deployer):
