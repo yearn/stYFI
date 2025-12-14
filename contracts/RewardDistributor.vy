@@ -200,10 +200,15 @@ def add_component(_component: address, _numerator: uint256, _denominator: uint25
     """
     assert msg.sender == self.management
     assert _component != empty(address)
-    assert self._unpack(self.packed_components[_component])[0] == empty(address)
     assert _numerator > 0 and _denominator > 0
 
     next: address = empty(address)
+    epoch: uint256 = 0
+    old_num: uint256 = 0
+    old_den: uint256 = 0
+    next, epoch, old_num, old_den = self._unpack(self.packed_components[_component])
+    assert next == empty(address)
+
     after_epoch: uint256 = 0
     after_num: uint256 = 0
     after_den: uint256 = 0
@@ -215,8 +220,7 @@ def add_component(_component: address, _numerator: uint256, _denominator: uint25
     self.num_components = num_components + 1
     self.packed_components[_after] = self._pack(_component, after_epoch, after_num, after_den)
 
-    epoch: uint256 = 0
-    if block.timestamp >= genesis + EPOCH_LENGTH:
+    if epoch == 0 and block.timestamp >= genesis + EPOCH_LENGTH:
         epoch = self._epoch() - 1
 
     self.packed_components[_component] = self._pack(next, epoch, _numerator, _denominator)
