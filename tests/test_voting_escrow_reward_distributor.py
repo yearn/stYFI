@@ -14,7 +14,7 @@ def veyfi(project, deployer):
 @fixture
 def ve_distributor(project, deployer, reward, distributor, veyfi):
     vrd = project.VotingEscrowRewardDistributor.deploy(distributor, reward, veyfi, sender=deployer)
-    distributor.add_component(vrd, COMPONENTS_SENTINEL, sender=deployer)
+    distributor.add_component(vrd, 4, 1, COMPONENTS_SENTINEL, sender=deployer)
     return vrd
 
 @fixture

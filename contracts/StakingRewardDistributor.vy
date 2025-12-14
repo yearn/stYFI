@@ -29,10 +29,6 @@ interface IDistributor:
 implements: IHooks
 implements: IComponent
 
-struct Scale:
-    numerator: uint256
-    denominator: uint256
-
 struct Weight:
     epoch: uint256
     time: uint256
@@ -58,7 +54,6 @@ pending_management: public(address)
 depositor: public(address)
 staking: public(IERC20)
 distributor: public(IDistributor)
-weight_scale: public(Scale)
 claimers: public(HashMap[address, bool])
 reward_expiration: public(uint256)
 reclaim_bounty: public(uint256)
@@ -91,10 +86,6 @@ event SetStaking:
 
 event SetDistributor:
     distributor: indexed(address)
-
-event SetWeightScale:
-    numerator: uint256
-    denominator: uint256
 
 event SetClaimer:
     account: indexed(address)
@@ -132,7 +123,6 @@ def __init__(_distributor: address, _token: address):
     self.distributor = IDistributor(_distributor)
     self.total_weight_cursor = Cursor(count=1, last=0)
     self.total_weight_entries[0] = TotalWeight(epoch=0, weight=10**12)
-    self.weight_scale = Scale(numerator=4, denominator=1)
     self.reward_expiration = 26
     self.reclaim_recipient = msg.sender
 
@@ -172,8 +162,7 @@ def sync_total_weight(_epoch: uint256) -> uint256:
             self.total_weight_cursor.last = next_idx
 
             weight = next.weight
-    scale: Scale = self.weight_scale
-    return weight * scale.numerator // scale.denominator
+    return weight
 
 @external
 def sync_rewards(_account: address = empty(address)) -> bool:
@@ -340,20 +329,6 @@ def set_distributor(_distributor: address):
 
     self.distributor = IDistributor(_distributor)
     log SetDistributor(distributor=_distributor)
-
-@external
-def set_weight_scale(_numerator: uint256, _denominator: uint256):
-    """
-    @notice Set scale by which the total weight is multiplied
-    @param _numerator Numerator
-    @param _denominator Denominator
-    @dev Can only be called by management
-    """
-    assert msg.sender == self.management
-    assert _numerator > 0 and _denominator > 0
-
-    self.weight_scale = Scale(numerator=_numerator, denominator=_denominator)
-    log SetWeightScale(numerator=_numerator, denominator=_denominator)
 
 @external
 def set_claimer(_account: address, _claimer: bool):

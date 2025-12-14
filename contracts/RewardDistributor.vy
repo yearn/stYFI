@@ -25,8 +25,10 @@ interface IDistributor:
 implements: IDistributor
 
 struct ComponentData:
-    epoch: uint256
     next: address
+    epoch: uint256
+    numerator: uint256
+    denominator: uint256
 
 genesis: public(immutable(uint256))
 token: public(immutable(IERC20))
@@ -35,7 +37,7 @@ pending_management: public(address)
 
 pull: public(IPull)
 num_components: public(uint256)
-linked_components: public(HashMap[address, ComponentData])
+packed_components: public(HashMap[address, uint256])
 
 last_epoch: public(uint256)
 epoch_rewards: public(HashMap[uint256, uint256]) # epoch => rewards
@@ -59,6 +61,11 @@ event AddComponent:
     component: indexed(address)
     after: address
 
+event SetComponentScale:
+    component: indexed(address)
+    numerator: uint256
+    denominator: uint256
+
 event RemoveComponent:
     component: indexed(address)
 
@@ -70,8 +77,9 @@ event SetManagement:
 
 MAX_NUM_COMPONENTS: constant(uint256) = 32
 COMPONENTS_SENTINEL: constant(address) = 0x1111111111111111111111111111111111111111
-GLOBAL_CURSOR: constant(address) = empty(address)
 EPOCH_LENGTH: constant(uint256) = 14 * 24 * 60 * 60
+EPOCH_MASK: constant(uint256) = 2**16 - 1
+NUM_MASK: constant(uint256) = 2**40 - 1
 
 @deploy
 def __init__(_genesis: uint256, _token: address):
@@ -85,7 +93,7 @@ def __init__(_genesis: uint256, _token: address):
     token = IERC20(_token)
 
     self.management = msg.sender
-    self.linked_components[COMPONENTS_SENTINEL] = ComponentData(epoch=0, next=COMPONENTS_SENTINEL)
+    self.packed_components[COMPONENTS_SENTINEL] = self._pack(COMPONENTS_SENTINEL, 0, 0, 0)
 
 @external
 @view
@@ -119,15 +127,19 @@ def claim() -> (uint256, uint256, uint256):
     assert self._sync(current)
 
     # make sure the caller is a component that was enabled at some point
-    data: ComponentData = self.linked_components[msg.sender]
-    epoch: uint256 = data.epoch
-    assert epoch > 0 or data.next != empty(address)
+    next: address = empty(address)
+    epoch: uint256 = 0
+    num: uint256 = 0
+    den: uint256 = 0
+    next, epoch, num, den = self._unpack(self.packed_components[msg.sender])
+
+    assert epoch > 0 or next != empty(address)
     assert epoch < current
 
     weight: uint256 = 0
     rewards: uint256 = 0
     weight, rewards = self._rewards(msg.sender, epoch)
-    self.linked_components[msg.sender].epoch = epoch + 1
+    self.packed_components[msg.sender] = self._pack(next, epoch + 1, num, den)
 
     assert extcall token.transfer(msg.sender, rewards, default_return_value=True)
 
@@ -155,6 +167,16 @@ def deposit(_epoch: uint256, _amount: uint256):
     log AddRewards(depositor=msg.sender, epoch=_epoch, rewards=_amount)
 
 @external
+@view
+def components(_component: address) -> ComponentData:
+    next: address = empty(address)
+    epoch: uint256 = 0
+    numerator: uint256 = 0
+    denominator: uint256 = 0
+    next, epoch, numerator, denominator = self._unpack(self.packed_components[_component])
+    return ComponentData(next=next, epoch=epoch, numerator=numerator, denominator=denominator)
+
+@external
 def set_pull(_pull: address):
     """
     @notice Set the address to pull future rewards from
@@ -167,28 +189,62 @@ def set_pull(_pull: address):
     log SetPull(pull=_pull)
 
 @external
-def add_component(_component: address, _after: address):
+def add_component(_component: address, _numerator: uint256, _denominator: uint256, _after: address):
     """
     @notice Add a component
     @param _component Address of the component to add
+    @param _numerator Number to multiply reported weights with
+    @param _denominator Number to divide reported weights by
     @param _after Address in the list to add the component after
     @dev Can only be called by management
     """
     assert msg.sender == self.management
     assert _component != empty(address)
-    assert self.linked_components[_component].next == empty(address)
-    next: address = self.linked_components[_after].next
+    assert self._unpack(self.packed_components[_component])[0] == empty(address)
+    assert _numerator > 0 and _denominator > 0
+
+    next: address = empty(address)
+    after_epoch: uint256 = 0
+    after_num: uint256 = 0
+    after_den: uint256 = 0
+    next, after_epoch, after_num, after_den = self._unpack(self.packed_components[_after])
     assert next != empty(address)
     num_components: uint256 = self.num_components
     assert num_components < MAX_NUM_COMPONENTS
 
     self.num_components = num_components + 1
-    self.linked_components[_after].next = _component
+    self.packed_components[_after] = self._pack(_component, after_epoch, after_num, after_den)
+
     epoch: uint256 = 0
     if block.timestamp >= genesis + EPOCH_LENGTH:
         epoch = self._epoch() - 1
-    self.linked_components[_component] = ComponentData(epoch=epoch, next=next)
+
+    self.packed_components[_component] = self._pack(next, epoch, _numerator, _denominator)
     log AddComponent(component=_component, after=_after)
+    log SetComponentScale(component=_component, numerator=_numerator, denominator=_denominator)
+
+@external
+def set_component_scale(_component: address, _numerator: uint256, _denominator: uint256):
+    """
+    @notice Set a components scale
+    @param _component Address of the component to update
+    @param _numerator Number to multiply reported weights with
+    @param _denominator Number to divide reported weights by
+    @dev Can only be called by management
+    """
+    assert msg.sender == self.management
+    assert _component != empty(address) and _component != COMPONENTS_SENTINEL
+    assert _numerator > 0 and _denominator > 0
+
+    next: address = empty(address)
+    epoch: uint256 = 0
+    num: uint256 = 0
+    den: uint256 = 0
+    next, epoch, num, den = self._unpack(self.packed_components[_component])
+    assert next != empty(address)
+
+    self.packed_components[_component] = self._pack(next, epoch, _numerator, _denominator)
+    log SetComponentScale(component=_component, numerator=_numerator, denominator=_denominator)
 
 @external
 def remove_component(_component: address, _previous: address):
@@ -199,14 +255,26 @@ def remove_component(_component: address, _previous: address):
     @dev Can only be called by management
     """
     assert msg.sender == self.management
-    assert _component != empty(address) and _previous != empty(address)
-    assert self.linked_components[_previous].next == _component
-    next: address = self.linked_components[_component].next
+    assert _component != empty(address) and _component != COMPONENTS_SENTINEL
+    assert _previous != empty(address)
+
+    prev_next: address = empty(address)
+    prev_epoch: uint256 = 0
+    prev_num: uint256 = 0
+    prev_den: uint256 = 0
+    prev_next, prev_epoch, prev_num, prev_den = self._unpack(self.packed_components[_previous])
+    assert prev_next == _component
+
+    next: address = empty(address)
+    epoch: uint256 = 0
+    num: uint256 = 0
+    den: uint256 = 0
+    next, epoch, num, den = self._unpack(self.packed_components[_component])
     assert next != empty(address)
 
     self.num_components -= 1
-    self.linked_components[_previous].next = next
-    self.linked_components[_component].next = empty(address)
+    self.packed_components[_previous] = self._pack(next, prev_epoch, prev_num, prev_den)
+    self.packed_components[_component] = self._pack(empty(address), epoch, 0, 0)
     log RemoveComponent(component=_component)
 
 @external
@@ -255,13 +323,17 @@ def _sync(_current: uint256) -> bool:
         
         # calculate sum of weights of all components
         total_weight: uint256 = 0
-        component: address = COMPONENTS_SENTINEL
+        next: address = self._unpack(self.packed_components[COMPONENTS_SENTINEL])[0]
         for j: uint256 in range(MAX_NUM_COMPONENTS):
-            component = self.linked_components[component].next
-            if component == COMPONENTS_SENTINEL:
+            if next == COMPONENTS_SENTINEL:
                 break
+            component: address = next
+            component_epoch: uint256 = 0
+            num: uint256 = 0
+            den: uint256 = 0
+            next, component_epoch, num, den = self._unpack(self.packed_components[component])
 
-            weight: uint256 = extcall IComponent(component).sync_total_weight(epoch)
+            weight: uint256 = extcall IComponent(component).sync_total_weight(epoch) * num // den
             self.epoch_weights[component][epoch] = weight
             total_weight += weight
         self.epoch_total_weight[epoch] = total_weight
@@ -299,3 +371,20 @@ def _rewards(_component: address, _epoch: uint256) -> (uint256, uint256):
         return 0, 0
     weight: uint256 = self.epoch_weights[_component][_epoch]
     return weight, self.epoch_rewards[_epoch] * weight // total
+
+@internal
+@pure
+def _pack(_next: address, _epoch: uint256, _num: uint256, _den: uint256) -> uint256:
+    """
+    @notice Pack values into a single storage slot
+    """
+    assert _epoch <= EPOCH_MASK and _num <= NUM_MASK and _den <= NUM_MASK
+    return (convert(_next, uint256) << 96) | (_epoch << 80) | (_num << 40) | _den
+
+@internal
+@pure
+def _unpack(_packed: uint256) -> (address, uint256, uint256, uint256):
+    """
+    @notice Unpack values from a single storage slot
+    """
+    return convert(_packed >> 96, address), (_packed >> 80) & EPOCH_MASK, (_packed >> 40) & NUM_MASK, _packed & NUM_MASK

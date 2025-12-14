@@ -27,10 +27,6 @@ interface IDistributor:
 implements: IHooks
 implements: IComponent
 
-struct Scale:
-    numerator: uint256
-    denominator: uint256
-
 struct Staked:
     epoch: uint256
     time: uint256
@@ -48,7 +44,6 @@ pending_management: public(address)
 
 depositors: public(HashMap[address, uint256])
 distributor: public(IDistributor)
-weight_scale: public(Scale)
 claimers: public(HashMap[address, bool])
 reward_expiration: public(uint256)
 reclaim_bounty: public(uint256)
@@ -87,10 +82,6 @@ event SetStaking:
 
 event SetDistributor:
     distributor: indexed(address)
-
-event SetWeightScale:
-    numerator: uint256
-    denominator: uint256
 
 event SetUnboostedWeights:
     weights: uint256[3]
@@ -145,7 +136,6 @@ def __init__(_distributor: address, _token: address, _lock: uint256, _depositors
         self.depositors[d] = i + 1
         self.staking[i] = IERC20(d)
 
-    self.weight_scale = Scale(numerator=4, denominator=1)
     self.reward_expiration = 26
     self.reclaim_recipient = msg.sender
 
@@ -178,8 +168,7 @@ def sync_total_weight(_epoch: uint256) -> uint256:
     # apply boost
     weight += weight * (BOOST_DURATION - _epoch) // BOOST_DURATION
 
-    scale: Scale = self.weight_scale
-    return weight * scale.numerator // scale.denominator
+    return weight
 
 @external
 def on_stake(_caller: address, _account: address, _prev_supply: uint256, _prev_staked: uint256, _amount: uint256):
@@ -342,20 +331,6 @@ def set_distributor(_distributor: address):
 
     self.distributor = IDistributor(_distributor)
     log SetDistributor(distributor=_distributor)
-
-@external
-def set_weight_scale(_numerator: uint256, _denominator: uint256):
-    """
-    @notice Set scale by which the total weight is multiplied
-    @param _numerator Numerator
-    @param _denominator Denominator
-    @dev Can only be called by management
-    """
-    assert msg.sender == self.management
-    assert _numerator > 0 and _denominator > 0
-
-    self.weight_scale = Scale(numerator=_numerator, denominator=_denominator)
-    log SetWeightScale(numerator=_numerator, denominator=_denominator)
 
 @external
 def set_unboosted_weights(_weights: uint256[3]):

@@ -10,7 +10,7 @@ DUST = 10**12
 @fixture
 def styfi_distributor(project, deployer, reward, distributor):
     srd = project.StakingRewardDistributor.deploy(distributor, reward, sender=deployer)
-    distributor.add_component(srd, COMPONENTS_SENTINEL, sender=deployer)
+    distributor.add_component(srd, 4, 1, COMPONENTS_SENTINEL, sender=deployer)
 
     return srd
 

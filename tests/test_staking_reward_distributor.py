@@ -13,7 +13,7 @@ def styfi_distributor(project, deployer, reward, styfi, distributor):
     srd.set_depositor(styfi, sender=deployer)
     srd.set_staking(styfi, sender=deployer)
     styfi.set_hooks(srd, sender=deployer)
-    distributor.add_component(srd, COMPONENTS_SENTINEL, sender=deployer)
+    distributor.add_component(srd, 4, 1, COMPONENTS_SENTINEL, sender=deployer)
 
     return srd
 
@@ -249,9 +249,10 @@ def test_reclaim_bounty(chain, deployer, alice, bob, reward, yfi, styfi, distrib
     assert reward.balanceOf(bob) == expect_bounty
 
 def test_total_weight(chain, deployer, alice, bob, yfi, styfi, distributor, genesis, styfi_distributor):
+    distributor.set_component_scale(styfi_distributor, 1, 1, sender=deployer)
+
     yfi.mint(alice, 3 * DUST, sender=alice)
     yfi.approve(styfi, 3 * DUST, sender=alice)
-    styfi_distributor.set_weight_scale(1, 1, sender=deployer)
 
     chain.pending_timestamp = genesis
     styfi.deposit(DUST, sender=alice)

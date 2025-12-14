@@ -26,10 +26,6 @@ interface IVotingEscrow:
 
 implements: IComponent
 
-struct Scale:
-    numerator: uint256
-    denominator: uint256
-
 struct Lock:
     amount: uint256
     boost_epochs: uint256
@@ -50,7 +46,6 @@ management: public(address)
 pending_management: public(address)
 
 distributor: public(IDistributor)
-weight_scale: public(Scale)
 claimers: public(HashMap[address, bool])
 reward_expiration: public(uint256)
 reclaim_bounty: public(uint256)
@@ -97,10 +92,6 @@ event SetSnapshot:
 event SetDistributor:
     distributor: indexed(address)
 
-event SetWeightScale:
-    numerator: uint256
-    denominator: uint256
-
 event SetClaimer:
     account: indexed(address)
     claimer: bool
@@ -139,7 +130,6 @@ def __init__(_distributor: address, _token: address, _veyfi: address):
     self.distributor = IDistributor(_distributor)
 
     self.total_weights[0] = Weight(weight=10**12, slope=0)
-    self.weight_scale = Scale(numerator=4, denominator=1)
     self.reward_expiration = 26
     self.reclaim_recipient = msg.sender
     self.report_recipient = msg.sender
@@ -166,8 +156,7 @@ def sync_total_weight(_epoch: uint256) -> uint256:
     self._sync_total_weights(current)
     assert self.last_epoch >= _epoch
 
-    scale: Scale = self.weight_scale
-    return self.total_weights[_epoch].weight * scale.numerator // scale.denominator
+    return self.total_weights[_epoch].weight
 
 @external
 def migrate():
@@ -336,20 +325,6 @@ def set_distributor(_distributor: address):
 
     self.distributor = IDistributor(_distributor)
     log SetDistributor(distributor=_distributor)
-
-@external
-def set_weight_scale(_numerator: uint256, _denominator: uint256):
-    """
-    @notice Set scale by which the total weight is multiplied
-    @param _numerator Numerator
-    @param _denominator Denominator
-    @dev Can only be called by management
-    """
-    assert msg.sender == self.management
-    assert _numerator > 0 and _denominator > 0
-
-    self.weight_scale = Scale(numerator=_numerator, denominator=_denominator)
-    log SetWeightScale(numerator=_numerator, denominator=_denominator)
 
 @external
 def set_claimer(_account: address, _claimer: bool):
