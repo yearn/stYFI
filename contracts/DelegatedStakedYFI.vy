@@ -368,6 +368,7 @@ def _transfer(_from: address, _to: address, _value: uint256):
     """
     @notice Transfer vault shares from one owner to another
     """
+    assert _from != _to
     assert _to != empty(address) and _to != self
 
     prev_from: uint256 = self.balanceOf[_from]

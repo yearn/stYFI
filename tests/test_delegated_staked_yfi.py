@@ -274,6 +274,15 @@ def test_transfer_from_allowance_excessive(deployer, alice, bob, yfi, dstaking):
     with reverts():
         dstaking.transferFrom(alice, bob, 2 * UNIT, sender=bob)
 
+def test_transfer_self(deployer, alice, bob, yfi, dstaking):
+    # transferring to self is not allowed
+    yfi.mint(alice, 3 * UNIT, sender=deployer)
+    yfi.approve(dstaking, 3 * UNIT, sender=alice)
+    dstaking.deposit(3 * UNIT, sender=alice)
+    with reverts():
+        dstaking.transfer(alice, UNIT, sender=alice)
+    dstaking.transfer(bob, UNIT, sender=alice)
+
 def test_approve(alice, bob, dstaking):
     # set allowance
     assert dstaking.allowance(alice, bob) == 0
