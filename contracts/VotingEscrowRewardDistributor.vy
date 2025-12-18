@@ -239,6 +239,8 @@ def report(_account: address) -> (uint256, uint256):
     @param _account Account to report
     @return Tuple with amount of rewards reclaimed and bounty amount received
     """
+    assert self.last_claimed[_account] > 0
+
     epoch: uint256 = self._epoch()
     assert self._sync_rewards(epoch)
 
