@@ -233,6 +233,8 @@ def maxDeposit(_owner: address) -> uint256:
     @param _owner User depositing
     @return Maximum amount of assets that can be deposited
     """
+    if self.killed:
+        return 0
     return max_value(uint256)
 
 @view
@@ -253,6 +255,8 @@ def maxMint(_owner: address) -> uint256:
     @param _owner User minting
     @return Maximum amount of shares that can be minted
     """
+    if self.killed:
+        return 0
     return max_value(uint256)
 
 @view
