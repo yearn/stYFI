@@ -202,7 +202,12 @@ def reclaim(_account: address, _idx: uint256) -> (uint256, uint256):
 
     assert _idx <= self.reward_integral_snapshot_max_index
 
-    epoch: uint256 = self._epoch() - self.reward_expiration
+    expiration: uint256 = self.reward_expiration
+    epoch: uint256 = self._epoch()
+    if epoch < expiration:
+        return 0, 0
+    epoch -= expiration
+
     snapshot_epoch: uint256 = self.reward_integral_snapshot[_idx].epoch
     assert snapshot_epoch <= epoch
 

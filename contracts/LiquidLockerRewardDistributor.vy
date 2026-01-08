@@ -237,7 +237,12 @@ def reclaim(_idx: uint256, _account: address) -> (uint256, uint256):
     if staked == 0:
         return 0, 0
 
-    epoch: uint256 = self._epoch() - self.reward_expiration
+    expiration: uint256 = self.reward_expiration
+    epoch: uint256 = self._epoch()
+    if epoch < expiration:
+        return 0, 0
+    epoch -= expiration
+
     integral: uint256 = self.reward_integral_snapshot[_idx][epoch]
     account_integral: uint256 = self.account_reward_integral[_idx][_account]
     if account_integral >= integral:
