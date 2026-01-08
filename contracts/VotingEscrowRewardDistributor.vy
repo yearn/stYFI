@@ -484,7 +484,12 @@ def _claim(_account: address, _time: uint256) -> uint256:
     if lock.amount == 0:
         self.last_claimed[_account] = _time
         return 0
+
     unlock_epoch: uint256 = (lock.unlock_time - genesis) // EPOCH_LENGTH
+    if epoch >= unlock_epoch:
+        self.last_claimed[_account] = _time
+        self.locks[_account].amount = 0
+        return 0
 
     weight: uint256 = lock.amount + lock.amount // MAX_NUM_EPOCHS * (lock.boost_epochs - epoch)
     epoch_rewards: uint256 = self.rewards[epoch] * weight // self.total_weights[epoch].weight

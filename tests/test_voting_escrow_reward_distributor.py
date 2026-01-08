@@ -67,6 +67,38 @@ def test_rewards(chain, deployer, alice, bob, charlie, reward, distributor, gene
     assert reward.balanceOf(deployer) == epoch_rewards // 2
     assert ve_distributor.rewards(0) == UNIT
 
+def test_rewards_iteration_limit(chain, deployer, alice, bob, reward, distributor, genesis, veyfi, ve_distributor):
+    # test edge case due to the iteration limit when (re)claiming
+    ve_distributor.set_claimer(deployer, True, sender=deployer)
+    ve_distributor.set_reward_expiration(2, 0, deployer, sender=deployer)
+
+    unlock = genesis + 33 * EPOCH_LENGTH
+    ve_distributor.set_snapshot(alice, DUST, 100, unlock, sender=deployer)
+    ve_distributor.set_snapshot(bob, 2 * DUST, 100, genesis + 40 * EPOCH_LENGTH, sender=deployer)
+    veyfi.set_locked(alice, DUST, unlock, sender=deployer)
+    veyfi.set_locked(bob, 2 * DUST, genesis + 40 * EPOCH_LENGTH, sender=deployer)
+
+    chain.pending_timestamp = genesis
+    ve_distributor.migrate(sender=alice)
+    ve_distributor.migrate(sender=bob)
+
+    # add some rewards
+    reward.mint(alice, 40 * UNIT, sender=alice)
+    reward.approve(distributor, 40 * UNIT, sender=alice)
+    for i in range(40):
+        distributor.deposit(i, UNIT, sender=alice)
+
+    chain.pending_timestamp = genesis + 10 * EPOCH_LENGTH
+    ve_distributor.sync_rewards(sender=deployer)
+
+    chain.pending_timestamp = genesis + 37 * EPOCH_LENGTH + 1
+    assert ve_distributor.reclaim(alice, sender=deployer).return_value[0] > 0
+    unlock_epoch = (unlock - genesis) // EPOCH_LENGTH
+    # verify we hit the edge case:
+    assert ve_distributor.last_claimed(alice) == genesis + (unlock_epoch + 1) * EPOCH_LENGTH
+    chain.pending_timestamp = genesis + 38 * EPOCH_LENGTH
+    assert ve_distributor.claim(alice, sender=deployer).return_value == 0
+
 def test_unlock(chain, deployer, alice, reward, distributor, genesis, veyfi, ve_distributor):
     # expired locks update weight accounting properly
     ve_distributor.set_claimer(deployer, True, sender=deployer)
