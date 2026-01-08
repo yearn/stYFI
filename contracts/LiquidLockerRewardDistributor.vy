@@ -466,29 +466,25 @@ def _sync_integral(_idx: uint256, _supply: uint256) -> bool:
         # fast forward through any other completed epochs
         weight: uint256 = self.normalized_weights[_idx]
 
-        if weight == 0:
-            # liquid locker is disabled, skip ahead
-            ew.rewards = 0
-        else:
-            epoch_rewards: uint256 = 0
-            for i: uint256 in range(32):
-                epoch += 1
-                epoch_rewards = self.epoch_total_rewards[epoch] * weight // NORM_WEIGHT_PRECISION
-                synced = epoch == current_epoch
-                if synced:
-                    break
-                else:
-                    unlocked += epoch_rewards
-                    self.reward_integral_snapshot[_idx][epoch] = integral + unlocked * PRECISION // supply
-
+        epoch_rewards: uint256 = 0
+        for i: uint256 in range(32):
+            epoch += 1
+            epoch_rewards = self.epoch_total_rewards[epoch] * weight // NORM_WEIGHT_PRECISION
+            synced = epoch == current_epoch
             if synced:
-                # fully caught up
-                ew.rewards = epoch_rewards
+                break
             else:
-                # not fully caught up. we already added the epoch's full amount to `unlocked`, so we 
-                # zero out the epoch rewards to not double count it in the next call
-                ew.timestamp = epoch * EPOCH_LENGTH
-                ew.rewards = 0
+                unlocked += epoch_rewards
+                self.reward_integral_snapshot[_idx][epoch] = integral + unlocked * PRECISION // supply
+
+        if synced:
+            # fully caught up
+            ew.rewards = epoch_rewards
+        else:
+            # not fully caught up. we already added the epoch's full amount to `unlocked`, so we 
+            # zero out the epoch rewards to not double count it in the next call
+            ew.timestamp = epoch * EPOCH_LENGTH
+            ew.rewards = 0
 
     self.current_rewards[_idx] = ew
 
