@@ -23,6 +23,7 @@ def ll_distributor(project, deployer, reward, distributor, depositors):
     llrd.set_unboosted_weights(SHARES, sender=deployer)
     
     for depositor in depositors:
+        depositor.set_capacity(10 * UNIT, sender=deployer)
         depositor.set_hooks(llrd, sender=deployer)
 
     distributor.add_component(llrd, 4, 1, COMPONENTS_SENTINEL, sender=deployer)

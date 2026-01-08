@@ -16,6 +16,7 @@ def hooks(project, deployer):
 @fixture
 def depositor(project, deployer, underlying, hooks):
     depositor = project.LiquidLockerDepositor.deploy(underlying, 4, "", "", sender=deployer)
+    depositor.set_capacity(10 * UNIT, sender=deployer)
     depositor.set_hooks(hooks, sender=deployer)
     return depositor
 
@@ -72,6 +73,27 @@ def test_deposit_killed(deployer, alice, underlying, depositor):
 
     depositor.set_killed(False, sender=deployer)
     depositor.deposit(UNIT, sender=alice)
+
+def test_deposit_capacity(deployer, alice, underlying, depositor):
+    # cant deposit more than capacity
+    underlying.mint(alice, 44 * UNIT, sender=deployer)
+    underlying.approve(depositor, 44 * UNIT, sender=alice)
+    
+    assert depositor.maxDeposit(alice) == 40 * UNIT
+    assert depositor.maxMint(alice) == 10 * UNIT
+    depositor.deposit(4 * UNIT, sender=alice)
+    assert depositor.maxDeposit(alice) == 36 * UNIT
+    assert depositor.maxMint(alice) == 9 * UNIT
+
+    with reverts():
+        depositor.deposit(40 * UNIT, sender=alice)
+    depositor.deposit(36 * UNIT, sender=alice)
+    assert depositor.maxDeposit(alice) == 0
+    assert depositor.maxMint(alice) == 0
+
+    depositor.set_capacity(UNIT, sender=deployer)
+    assert depositor.maxDeposit(alice) == 0
+    assert depositor.maxMint(alice) == 0
 
 def test_unstake(chain, deployer, alice, underlying, depositor):
     # unstaking starts a stream
@@ -295,6 +317,18 @@ def test_set_killed_permission(deployer, alice, depositor):
     with reverts():
         depositor.set_killed(True, sender=alice)
     depositor.set_killed(True, sender=deployer)
+
+def test_set_capacity(deployer, depositor):
+    # vault capcity can be set
+    assert depositor.capacity() == 10 * UNIT
+    depositor.set_capacity(11 * UNIT, sender=deployer)
+    assert depositor.capacity() == 11 * UNIT
+
+def test_set_capacity_permission(deployer, alice, depositor):
+    # only management can set capacity
+    with reverts():
+        depositor.set_capacity(11 * UNIT, sender=alice)
+    depositor.set_capacity(11 * UNIT, sender=deployer)
 
 def test_set_hooks(project, deployer, depositor, hooks):
     # hooks contract can be changed

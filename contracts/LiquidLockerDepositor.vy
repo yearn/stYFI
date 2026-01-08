@@ -28,6 +28,7 @@ scale: public(immutable(uint256))
 management: public(address)
 pending_management: public(address)
 killed: public(bool)
+capacity: public(uint256)
 hooks: public(IHooks)
 
 totalSupply: public(uint256)
@@ -64,6 +65,9 @@ event Withdraw:
 
 event SetKilled:
     killed: bool
+
+event SetCapacity:
+    capacity: uint256
 
 event SetHooks:
     hooks: indexed(address)
@@ -222,9 +226,11 @@ def maxDeposit(_owner: address) -> uint256:
     @param _owner User depositing
     @return Maximum amount of assets that can be deposited
     """
-    if self.killed:
+    supply: uint256 = self.totalSupply
+    capacity: uint256 = self.capacity
+    if self.killed or supply >= capacity:
         return 0
-    return max_value(uint256)
+    return (capacity - supply) * scale
 
 @view
 @external
@@ -244,9 +250,11 @@ def maxMint(_owner: address) -> uint256:
     @param _owner User minting
     @return Maximum amount of shares that can be minted
     """
-    if self.killed:
+    supply: uint256 = self.totalSupply
+    capacity: uint256 = self.capacity
+    if self.killed or supply >= capacity:
         return 0
-    return max_value(uint256) // scale
+    return capacity - supply
 
 @view
 @external
@@ -321,7 +329,25 @@ def set_killed(_killed: bool):
     log SetKilled(killed=_killed)
 
 @external
+def set_capacity(_capacity: uint256):
+    """
+    @notice Set the vault capacity, which is the maximum supply
+    @param _capacity The capacity
+    @dev Can only be called by management
+    """
+    assert msg.sender == self.management
+    assert _capacity <= max_value(uint256) // scale
+
+    self.capacity = _capacity
+    log SetCapacity(capacity=_capacity)
+
+@external
 def set_hooks(_hooks: address):
+    """
+    @notice Set the hooks address
+    @param _hooks New hooks address
+    @dev Can only be called by management
+    """
     assert msg.sender == self.management
 
     self.hooks = IHooks(_hooks)
@@ -361,7 +387,10 @@ def _stake(_receiver: address, _shares: uint256):
 
     prev_supply: uint256 = self.totalSupply
     prev_balance: uint256 = self.balanceOf[_receiver]
-    self.totalSupply = prev_supply + _shares
+    
+    supply: uint256 = prev_supply + _shares
+    assert supply <= self.capacity
+    self.totalSupply = supply
     self.balanceOf[_receiver] = prev_balance + _shares
 
     extcall self.hooks.on_stake(msg.sender, _receiver, prev_supply, prev_balance, _shares)
