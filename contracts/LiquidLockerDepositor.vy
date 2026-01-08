@@ -117,6 +117,7 @@ def deposit(_assets: uint256, _receiver: address = msg.sender) -> uint256:
     @param _receiver Recipient of the shares
     @return Amount of shares minted
     """
+    assert _assets >= scale
     self._stake(_receiver, _assets // scale)
     assert extcall IERC20(asset).transferFrom(msg.sender, self, _assets, default_return_value=True)
     return _assets // scale
