@@ -112,6 +112,7 @@ def rewards(_component: address, _epoch: uint256) -> uint256:
     @param _component The component address
     @param _epoch The epoch number
     @return The amount of reward tokens allocated to the component
+    @dev Returns zero for any unsynced epoch
     """
     return self._rewards(_component, _epoch)[1]
 
