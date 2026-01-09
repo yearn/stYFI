@@ -78,9 +78,7 @@ def test_transfer(chain, alice, bob, yfi, styfi, styfi_distributor):
     chain.pending_timestamp = styfi_distributor.genesis()
     styfi.deposit(3 * UNIT, sender=alice)
 
-    # unstake
     styfi.transfer(bob, 2 * UNIT, sender=alice)
-
     assert styfi_distributor.total_weight_cursor().count == 1
     assert styfi_distributor.total_weight_entries(0) == (0, DUST + 3 * UNIT)
 
@@ -89,6 +87,18 @@ def test_transfer(chain, alice, bob, yfi, styfi, styfi_distributor):
     styfi.transfer(bob, UNIT, sender=alice)
     assert styfi_distributor.total_weight_cursor().count == 1
     assert styfi_distributor.total_weight_entries(0) == (0, DUST + 3 * UNIT)
+
+def test_transfer_zero(chain, alice, bob, yfi, styfi, styfi_distributor):
+    yfi.mint(alice, 3 * UNIT, sender=alice)
+    yfi.approve(styfi, 3 * UNIT, sender=alice)
+
+    chain.pending_timestamp = styfi_distributor.genesis()
+    styfi.deposit(3 * UNIT, sender=alice)
+    styfi.transfer(bob, 0, sender=alice)
+
+    # transfer more next epoch
+    chain.pending_timestamp += EPOCH_LENGTH
+    styfi.transfer(bob, 0, sender=alice)
 
 def test_rewards(chain, deployer, alice, bob, charlie, reward, yfi, styfi, distributor, genesis, styfi_distributor, claimer):
     styfi_distributor.set_claimer(alice, True, sender=deployer)
@@ -110,6 +120,8 @@ def test_rewards(chain, deployer, alice, bob, charlie, reward, yfi, styfi, distr
     assert distributor.epoch_weights(styfi_distributor, 0) == 0
     assert styfi_distributor.epoch_rewards() == (0, 0)
     assert styfi_distributor.pending_rewards(alice) == 0
+    assert styfi_distributor.accrued_rewards(alice) == (1, 0)
+    assert styfi_distributor.accrued_reward_entries(alice, 0) == (0, 0)
 
     ts = genesis + EPOCH_LENGTH * 3 // 2
     chain.pending_timestamp = ts
@@ -124,6 +136,8 @@ def test_rewards(chain, deployer, alice, bob, charlie, reward, yfi, styfi, distr
     assert styfi_distributor.reward_integral() == integral
     assert styfi_distributor.account_reward_integral(alice) == integral
     assert styfi_distributor.pending_rewards(alice) == UNIT // 4
+    assert styfi_distributor.accrued_rewards(alice) == (2, 0)
+    assert styfi_distributor.accrued_reward_entries(alice, 1) == (1, UNIT // 4)
 
     # fast forward to end of epoch
     ts = genesis + 2 * EPOCH_LENGTH
@@ -148,6 +162,7 @@ def test_rewards(chain, deployer, alice, bob, charlie, reward, yfi, styfi, distr
     chain.pending_timestamp = ts
     styfi_distributor.claim(alice, sender=alice)
     assert styfi_distributor.pending_rewards(alice) == 0
+    assert styfi_distributor.accrued_rewards(alice) == (3, UNIT // 2)
     assert reward.balanceOf(alice) == UNIT // 2
 
 def test_reclaim(chain, deployer, alice, bob, reward, yfi, styfi, distributor, genesis, styfi_distributor):
@@ -229,6 +244,40 @@ def test_reclaim(chain, deployer, alice, bob, reward, yfi, styfi, distributor, g
         reclaimed = styfi_distributor.reclaim(alice, sender=bob).return_value[0]
         assert reclaimed == UNIT // 4 + UNIT // 2 - UNIT // 8
         assert reward.balanceOf(deployer) == UNIT // 4 + UNIT // 2 - UNIT // 8
+
+def test_reclaim_accrued(chain, deployer, alice, bob, reward, yfi, styfi, distributor, genesis, styfi_distributor):
+    # deposit small amount to test precision and make it easier to check math
+    yfi.mint(alice, 3 * DUST, sender=alice)
+    yfi.approve(styfi, 3 * DUST, sender=alice)
+
+    chain.pending_timestamp = genesis
+    styfi.deposit(DUST, sender=alice)
+    styfi.deposit(2 * DUST, bob, sender=alice)
+
+    styfi_distributor.set_reward_expiration(3, 0, deployer, sender=deployer)
+
+    # add some rewards
+    reward.mint(alice, 1000 * UNIT, sender=alice)
+    reward.approve(distributor, 2**256 - 1, sender=alice)
+    for i in range(6):
+        distributor.deposit(i, (i + 1) * UNIT, sender=alice)
+
+    styfi_distributor.set_claimer(bob, True, sender=deployer)
+
+    # sync in middle of epoch 1
+    chain.pending_timestamp = genesis + 3 * EPOCH_LENGTH // 2
+    styfi_distributor.sync_rewards(alice, sender=bob)
+    assert styfi_distributor.pending_rewards(alice) == UNIT // 8
+    assert styfi_distributor.accrued_rewards(alice) == (2, 0)
+
+    # reclaim in epoch 6, including snapshotted accrued rewards
+    # in epoch 6, we can reclaim rewards until end of epoch 2
+    chain.pending_timestamp = genesis + 5 * EPOCH_LENGTH
+    reclaimed = styfi_distributor.reclaim(alice, 1, sender=bob).return_value[0]
+    assert reclaimed == UNIT // 4 + UNIT // 2
+    assert reward.balanceOf(deployer) == UNIT // 4 + UNIT // 2
+    assert styfi_distributor.pending_rewards(alice) == 0
+    assert styfi_distributor.accrued_rewards(alice) == (2, UNIT // 8)
 
 def test_reclaim_bounty(chain, deployer, alice, bob, reward, yfi, styfi, distributor, genesis, styfi_distributor):
     yfi.mint(alice, 3 * DUST, sender=alice)

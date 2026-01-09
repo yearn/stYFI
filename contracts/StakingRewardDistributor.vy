@@ -46,6 +46,14 @@ struct Rewards:
     timestamp: uint256
     rewards: uint256
 
+struct Accrued:
+    count: uint256
+    claimed: uint256
+
+struct AccruedEntry:
+    epoch: uint256
+    accrued: uint256
+
 genesis: public(immutable(uint256))
 token: public(immutable(IERC20))
 management: public(address)
@@ -61,13 +69,14 @@ reclaim_recipient: public(address)
 reclaim_disabled: public(HashMap[address, bool])
 
 total_weight_cursor: public(Cursor)
-total_weight_entries: public(HashMap[uint256, TotalWeight]) # idx => epoch | weight
+total_weight_entries: public(HashMap[uint256, TotalWeight])
 
 epoch_rewards: public(Rewards)
 reward_integral: public(uint256)
 reward_integral_snapshot: public(HashMap[uint256, uint256])
 account_reward_integral: public(HashMap[address, uint256])
-pending_rewards: public(HashMap[address, uint256])
+accrued_rewards: public(HashMap[address, Accrued])
+accrued_reward_entries: public(HashMap[address, HashMap[uint256, AccruedEntry]]) # account => idx => entry
 
 event Claim:
     account: indexed(address)
@@ -245,49 +254,77 @@ def claim(_account: address) -> uint256:
     @param _account Account to claim rewards for
     @return Amount of rewards tokens claimed
     """
-    staked: uint256 = staticcall self.staking.balanceOf(_account)
-    if staked == 0 and self.pending_rewards[_account] == 0:
+    if self.accrued_rewards[_account].count == 0:
         # shortcut accounts that are guaranteed to have no rewards
         return 0
 
     assert self.claimers[msg.sender]
     assert self._sync_integral()
-    pending: uint256 = self._sync_account_integral(_account, staked)
+    staked: uint256 = staticcall self.staking.balanceOf(_account)
+    accrued: uint256 = self._sync_account_integral(_account, staked)
+    pending: uint256 = accrued - self.accrued_rewards[_account].claimed
 
     if pending > 0:
-        self.pending_rewards[_account] = 0
+        self.accrued_rewards[_account].claimed = accrued
         assert extcall token.transfer(msg.sender, pending, default_return_value=True)
         log Claim(account=_account, rewards=pending)
 
     return pending
 
 @external
-def reclaim(_account: address) -> (uint256, uint256):
+@view
+def pending_rewards(_account: address) -> uint256:
+    """
+    @notice Query pending rewards
+    @param _account Account to query pending rewards for
+    @return Amount of pending rewards tokens
+    @dev Does not include earned rewards since last account state change
+    """
+    idx: uint256 = self.accrued_rewards[_account].count
+    if idx == 0:
+        return 0
+    idx -= 1
+    accrued: uint256 = self.accrued_reward_entries[_account][idx].accrued
+    return accrued - self.accrued_rewards[_account].claimed
+
+@external
+def reclaim(_account: address, _idx: uint256 = max_value(uint256)) -> (uint256, uint256):
     """
     @notice Reclaim expired rewards
     @param _account Account to reclaim rewards for
+    @param _idx Index of accrued rewards to reclaim from (optional)
     @return Tuple with amount of rewards reclaimed and bounty amount received
     """
     assert not self.reclaim_disabled[_account]
     assert self._sync_integral()
+    count: uint256 = self.accrued_rewards[_account].count
+    assert count > 0
+    assert _idx == max_value(uint256) or _idx < count
 
     staked: uint256 = staticcall self.staking.balanceOf(_account)
-    if staked == 0:
-        return 0, 0
-
     expiration: uint256 = self.reward_expiration
     epoch: uint256 = self._epoch()
     if epoch < expiration:
         return 0, 0
     epoch -= expiration
 
+    # reclaim based on snapshotted accrued rewards
+    rewards: uint256 = 0
+    if _idx < max_value(uint256):
+        assert self.accrued_reward_entries[_account][_idx].epoch <= epoch
+        accrued: uint256 = self.accrued_reward_entries[_account][_idx].accrued
+        claimed: uint256 = self.accrued_rewards[_account].claimed
+        if claimed < accrued:
+            rewards = accrued - claimed
+            self.accrued_rewards[_account].claimed = accrued
+
+    # reclaim from rewards since last state change
     integral: uint256 = self.reward_integral_snapshot[epoch]
     account_integral: uint256 = self.account_reward_integral[_account]
-    if account_integral >= integral:
-        return 0, 0
+    if account_integral < integral:
+        rewards += (integral - account_integral) * staked // PRECISION
+        self.account_reward_integral[_account] = integral
 
-    rewards: uint256 = (integral - account_integral) * staked // PRECISION
-    self.account_reward_integral[_account] = integral
     if rewards == 0:
         return 0, 0
 
@@ -503,10 +540,27 @@ def _sync_account_integral(_account: address, _staked: uint256) -> uint256:
     """
     @notice Sync integral of a specific account to the latest value
     """
+    epoch: uint256 = self._epoch()
     integral: uint256 = self.reward_integral
-    pending: uint256 = self.pending_rewards[_account]
+
+    idx: uint256 = self.accrued_rewards[_account].count
+    if idx == 0:
+        # no entries yet
+        idx = 1
+        self.accrued_rewards[_account].count = 1
+        self.accrued_reward_entries[_account][0].epoch = epoch
+    idx -= 1
+
+    accrued: uint256 = self.accrued_reward_entries[_account][idx].accrued
     if _staked > 0:
-        pending += (integral - self.account_reward_integral[_account]) * _staked // PRECISION
-        self.pending_rewards[_account] = pending
+        if epoch > self.accrued_reward_entries[_account][idx].epoch:
+            # new epoch, new entry
+            idx += 1
+            self.accrued_rewards[_account].count = idx + 1
+            self.accrued_reward_entries[_account][idx].epoch = epoch
+
+        accrued += (integral - self.account_reward_integral[_account]) * _staked // PRECISION
+        self.accrued_reward_entries[_account][idx].accrued = accrued
+
     self.account_reward_integral[_account] = integral
-    return pending
+    return accrued
