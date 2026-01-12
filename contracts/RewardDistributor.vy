@@ -147,6 +147,7 @@ def claim() -> (uint256, uint256, uint256):
     return epoch, weight, rewards
 
 @external
+@nonreentrant
 def sync(_range: uint256 = 32) -> bool:
     """
     @notice Finalize weights and rewards for completed epochs
