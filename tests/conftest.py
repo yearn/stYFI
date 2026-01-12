@@ -32,7 +32,7 @@ def styfi(project, deployer, yfi):
 
 @fixture
 def distributor(project, chain, deployer, reward):
-    genesis = (chain.pending_timestamp // EPOCH_LENGTH + 1) * EPOCH_LENGTH
+    genesis = (chain.pending_timestamp // EPOCH_LENGTH + 1) * EPOCH_LENGTH + 69
     return project.RewardDistributor.deploy(genesis, reward, sender=deployer)
 
 @fixture

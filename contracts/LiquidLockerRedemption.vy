@@ -71,7 +71,6 @@ def __init__(_genesis: uint256, _yfi: address, _lock: uint256, _tokens: address[
     @param _tokens Liquid locker token addresses
     @param _scale Amount of liquid locker tokens per underlying YFI in its lock
     """
-    assert _genesis % EPOCH_LENGTH == 0
     assert _lock <= BOOST_DURATION
 
     genesis = _genesis

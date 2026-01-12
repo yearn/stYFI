@@ -88,7 +88,6 @@ def __init__(_genesis: uint256, _token: address):
     @param _genesis Genesis timestamp
     @param _token The address of the reward token
     """
-    assert _genesis % EPOCH_LENGTH == 0
     genesis = _genesis
     token = IERC20(_token)
 

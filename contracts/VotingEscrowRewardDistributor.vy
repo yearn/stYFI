@@ -498,7 +498,7 @@ def _claim(_account: address, _time: uint256) -> uint256:
     synced: bool = epoch == completed_epoch
     if not synced:
         # rollover to new epoch. first finalize the last one
-        rewards += epoch_rewards - epoch_rewards * (last_claimed % EPOCH_LENGTH) // EPOCH_LENGTH
+        rewards += epoch_rewards - epoch_rewards * ((last_claimed - genesis) % EPOCH_LENGTH) // EPOCH_LENGTH
 
         for i: uint256 in range(32):
             epoch += 1
@@ -520,10 +520,11 @@ def _claim(_account: address, _time: uint256) -> uint256:
         assert synced or _time < block.timestamp
 
         # set time to beginning of the epoch. only needs to be correct mod `EPOCH_LENGTH`
-        last_claimed = 0
+        last_claimed = genesis
 
     if synced:
-        rewards += epoch_rewards * (_time % EPOCH_LENGTH) // EPOCH_LENGTH - epoch_rewards * (last_claimed % EPOCH_LENGTH) // EPOCH_LENGTH
+        rewards += epoch_rewards * ((_time - genesis) % EPOCH_LENGTH) // EPOCH_LENGTH
+        rewards -= epoch_rewards * ((last_claimed - genesis) % EPOCH_LENGTH) // EPOCH_LENGTH
         self.last_claimed[_account] = _time
 
         # zero out expired lock
