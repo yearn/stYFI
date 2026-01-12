@@ -301,7 +301,6 @@ def reclaim(_account: address, _idx: uint256 = max_value(uint256)) -> (uint256, 
     assert count > 0
     assert _idx == max_value(uint256) or _idx < count
 
-    staked: uint256 = staticcall self.staking.balanceOf(_account)
     expiration: uint256 = self.reward_expiration
     epoch: uint256 = self._epoch()
     if epoch < expiration:
@@ -322,6 +321,7 @@ def reclaim(_account: address, _idx: uint256 = max_value(uint256)) -> (uint256, 
     integral: uint256 = self.reward_integral_snapshot[epoch]
     account_integral: uint256 = self.account_reward_integral[_account]
     if account_integral < integral:
+        staked: uint256 = staticcall self.staking.balanceOf(_account)
         rewards += (integral - account_integral) * staked // PRECISION
         self.account_reward_integral[_account] = integral
 

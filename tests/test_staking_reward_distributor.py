@@ -195,11 +195,11 @@ def test_reclaim(chain, deployer, alice, bob, reward, yfi, styfi, distributor, g
     with chain.isolate():
         chain.pending_timestamp = genesis + 4 * EPOCH_LENGTH
         # on beginning of epoch 4, we can reclaim rewards from end of epoch 4-3=1
-        styfi_distributor.account_reward_integral(alice) == 0
+        assert styfi_distributor.account_reward_integral(alice) == 0
         reclaimed = styfi_distributor.reclaim(alice, sender=bob).return_value[0]
         assert reclaimed == UNIT // 4
         assert reward.balanceOf(deployer) == UNIT // 4
-        styfi_distributor.account_reward_integral(alice) == styfi_distributor.reward_integral_snapshot(1)
+        assert styfi_distributor.account_reward_integral(alice) == styfi_distributor.reward_integral_snapshot(1)
 
     # cant reclaim if disabled
     with chain.isolate():
@@ -218,29 +218,29 @@ def test_reclaim(chain, deployer, alice, bob, reward, yfi, styfi, distributor, g
         assert reclaimed == UNIT // 4
         assert reward.balanceOf(deployer) == UNIT // 4
 
-    # try middle of epoch 5
+    # try middle of epoch 4
     with chain.isolate():
         chain.pending_timestamp = genesis + 4 * EPOCH_LENGTH + EPOCH_LENGTH // 2
-        # in middle of epoch 5, we can still only reclaim rewards until end of epoch 1
+        # in middle of epoch 4, we can still only reclaim rewards until end of epoch 1
         reclaimed = styfi_distributor.reclaim(alice, sender=bob).return_value[0]
         assert reclaimed == UNIT // 4
         assert reward.balanceOf(deployer) == UNIT // 4
 
     with chain.isolate():
         chain.pending_timestamp = genesis + 5 * EPOCH_LENGTH
-        # in epoch 6, we can reclaim rewards until end of epoch 2
+        # in epoch 5, we can reclaim rewards until end of epoch 2
         reclaimed = styfi_distributor.reclaim(alice, sender=bob).return_value[0]
         assert reclaimed == UNIT // 4 + UNIT // 2
         assert reward.balanceOf(deployer) == UNIT // 4 + UNIT // 2
 
-    # claim in middle of epoch 1, followed by reclaim in epoch 6
+    # claim in middle of epoch 1, followed by reclaim in epoch 5
     with chain.isolate():
         styfi_distributor.set_claimer(bob, True, sender=deployer)
         chain.pending_timestamp = genesis + 3 * EPOCH_LENGTH // 2
         styfi_distributor.claim(alice, sender=bob)
         assert reward.balanceOf(bob) == UNIT // 8
         chain.pending_timestamp = genesis + 5 * EPOCH_LENGTH
-        # in epoch 6, we can reclaim rewards until end of epoch 2
+        # in epoch 5, we can reclaim rewards until end of epoch 2
         reclaimed = styfi_distributor.reclaim(alice, sender=bob).return_value[0]
         assert reclaimed == UNIT // 4 + UNIT // 2 - UNIT // 8
         assert reward.balanceOf(deployer) == UNIT // 4 + UNIT // 2 - UNIT // 8
@@ -270,8 +270,14 @@ def test_reclaim_accrued(chain, deployer, alice, bob, reward, yfi, styfi, distri
     assert styfi_distributor.pending_rewards(alice) == UNIT // 8
     assert styfi_distributor.accrued_rewards(alice) == (2, 0)
 
-    # reclaim in epoch 6, including snapshotted accrued rewards
-    # in epoch 6, we can reclaim rewards until end of epoch 2
+    # reclaim in epoch 5, including snapshotted accrued rewards
+    # in epoch 5, we can reclaim rewards until end of epoch 2
+    with chain.isolate():
+        # without reclaiming accrued
+        chain.pending_timestamp = genesis + 5 * EPOCH_LENGTH
+        reclaimed = styfi_distributor.reclaim(alice, sender=bob).return_value[0]
+        assert reclaimed == UNIT // 8 + UNIT // 2
+
     chain.pending_timestamp = genesis + 5 * EPOCH_LENGTH
     reclaimed = styfi_distributor.reclaim(alice, 1, sender=bob).return_value[0]
     assert reclaimed == UNIT // 4 + UNIT // 2

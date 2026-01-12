@@ -69,6 +69,16 @@ def test_deposit_killed(deployer, alice, yfi, staking):
     staking.set_killed(False, sender=deployer)
     staking.deposit(UNIT, sender=alice)
 
+def test_deposit_no_hooks(deployer, alice, bob, yfi, hooks, staking):
+    # cant deposit before a hook is set
+    staking.set_hooks(ZERO_ADDRESS, sender=deployer)
+    yfi.mint(alice, UNIT, sender=deployer)
+    yfi.approve(staking, UNIT, sender=alice)
+    with reverts():
+        staking.deposit(UNIT, sender=alice)
+    staking.set_hooks(hooks, sender=deployer)
+    staking.deposit(UNIT, sender=alice)
+
 def test_unstake(chain, deployer, alice, yfi, staking):
     # unstaking starts a stream
     yfi.mint(alice, 3 * UNIT, sender=deployer)
