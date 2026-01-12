@@ -302,3 +302,24 @@ def test_reclaim_accrued(chain, deployer, alice, bob, reward, yfi, distributor, 
     assert reward.balanceOf(deployer) == UNIT // 4 + UNIT // 2
     assert delegated_distributor.pending_rewards(alice) == 0
     assert delegated_distributor.accrued_rewards(alice) == (2, UNIT // 8)
+
+def test_sweep(project, deployer, delegated_distributor):
+    # tokens can be transfered out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(delegated_distributor, 3 * UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == 0
+    assert token.balanceOf(delegated_distributor) == 3 * UNIT
+    delegated_distributor.sweep(token, UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == UNIT
+    assert token.balanceOf(delegated_distributor) == 2 * UNIT
+    delegated_distributor.sweep(token, sender=deployer)
+    assert token.balanceOf(deployer) == 3 * UNIT
+    assert token.balanceOf(delegated_distributor) == 0
+
+def test_sweep_permission(project, deployer, alice, delegated_distributor):
+    # only management can transfer tokens out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(delegated_distributor, UNIT, sender=deployer)
+    with reverts():
+        delegated_distributor.sweep(token, sender=alice)
+    delegated_distributor.sweep(token, sender=deployer)

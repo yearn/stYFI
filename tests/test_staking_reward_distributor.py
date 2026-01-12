@@ -328,3 +328,24 @@ def test_total_weight(chain, deployer, alice, bob, yfi, styfi, distributor, gene
     assert distributor.epoch_weights(styfi_distributor, 0) == 2 * DUST
     assert distributor.epoch_weights(styfi_distributor, 1) == 2 * DUST
     assert distributor.epoch_weights(styfi_distributor, 2) == 4 * DUST
+
+def test_sweep(project, deployer, styfi_distributor):
+    # tokens can be transfered out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(styfi_distributor, 3 * UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == 0
+    assert token.balanceOf(styfi_distributor) == 3 * UNIT
+    styfi_distributor.sweep(token, UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == UNIT
+    assert token.balanceOf(styfi_distributor) == 2 * UNIT
+    styfi_distributor.sweep(token, sender=deployer)
+    assert token.balanceOf(deployer) == 3 * UNIT
+    assert token.balanceOf(styfi_distributor) == 0
+
+def test_sweep_permission(project, deployer, alice, styfi_distributor):
+    # only management can transfer tokens out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(styfi_distributor, UNIT, sender=deployer)
+    with reverts():
+        styfi_distributor.sweep(token, sender=alice)
+    styfi_distributor.sweep(token, sender=deployer)

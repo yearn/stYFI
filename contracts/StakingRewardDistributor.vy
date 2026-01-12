@@ -341,6 +341,22 @@ def reclaim(_account: address, _idx: uint256 = max_value(uint256)) -> (uint256, 
     return rewards, bounty
 
 @external
+def sweep(_token: address, _amount: uint256 = max_value(uint256)):
+    """
+    @notice Transfer out a token
+    @param _token The token address
+    @param _amount The amount of tokens. Defaults to all
+    @dev Can only be called by management
+    """
+    assert msg.sender == self.management
+
+    amount: uint256 = _amount
+    if _amount == max_value(uint256):
+        amount = staticcall IERC20(_token).balanceOf(self)
+
+    assert extcall IERC20(_token).transfer(msg.sender, amount, default_return_value=True)
+
+@external
 def set_depositor(_depositor: address):
     """
     @notice Set the depositor

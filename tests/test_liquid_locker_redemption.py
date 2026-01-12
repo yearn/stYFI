@@ -62,3 +62,24 @@ def test_exchange(deployer, alice, yfi, ll_tokens, redemption, idx):
     yfi.approve(redemption, yfi_amt, sender=alice)
     redemption.exchange(idx, yfi_amt, sender=alice)
     assert ll_token.balanceOf(alice) == UNIT * 9 // 10
+
+def test_sweep(project, deployer, redemption):
+    # tokens can be transfered out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(redemption, 3 * UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == 0
+    assert token.balanceOf(redemption) == 3 * UNIT
+    redemption.sweep(token, UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == UNIT
+    assert token.balanceOf(redemption) == 2 * UNIT
+    redemption.sweep(token, sender=deployer)
+    assert token.balanceOf(deployer) == 3 * UNIT
+    assert token.balanceOf(redemption) == 0
+
+def test_sweep_permission(project, deployer, alice, redemption):
+    # only management can transfer tokens out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(redemption, UNIT, sender=deployer)
+    with reverts():
+        redemption.sweep(token, sender=alice)
+    redemption.sweep(token, sender=deployer)

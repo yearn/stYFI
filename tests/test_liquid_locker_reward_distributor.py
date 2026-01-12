@@ -214,3 +214,24 @@ def test_reclaim_accrued(chain, deployer, alice, bob, reward, distributor, genes
     reclaimed = ll_distributor.reclaim(idx, alice, 1, sender=bob).return_value[0]
     assert reclaimed == epoch_rewards // 4 + epoch_rewards // 2
     assert reward.balanceOf(deployer) == epoch_rewards // 4 + epoch_rewards // 2
+
+def test_sweep(project, deployer, ll_distributor):
+    # tokens can be transfered out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(ll_distributor, 3 * UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == 0
+    assert token.balanceOf(ll_distributor) == 3 * UNIT
+    ll_distributor.sweep(token, UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == UNIT
+    assert token.balanceOf(ll_distributor) == 2 * UNIT
+    ll_distributor.sweep(token, sender=deployer)
+    assert token.balanceOf(deployer) == 3 * UNIT
+    assert token.balanceOf(ll_distributor) == 0
+
+def test_sweep_permission(project, deployer, alice, ll_distributor):
+    # only management can transfer tokens out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(ll_distributor, UNIT, sender=deployer)
+    with reverts():
+        ll_distributor.sweep(token, sender=alice)
+    ll_distributor.sweep(token, sender=deployer)

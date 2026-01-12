@@ -172,7 +172,7 @@ def exchange(_idx: uint256, _yfi_amount: uint256) -> uint256:
     return ll_amount
 
 @external
-def transfer(_token: address, _amount: uint256 = max_value(uint256)):
+def sweep(_token: address, _amount: uint256 = max_value(uint256)):
     """
     @notice Transfer out a token
     @param _token The token address

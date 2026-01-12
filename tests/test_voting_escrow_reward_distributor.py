@@ -332,6 +332,27 @@ def test_early_exit(chain, deployer, alice, veyfi, ve_distributor):
     veyfi.set_locked(alice, UNIT, ts, sender=deployer)
     assert ve_distributor.check_lock(alice) == (UNIT, ts)
 
+def test_sweep(project, deployer, ve_distributor):
+    # tokens can be transfered out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(ve_distributor, 3 * UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == 0
+    assert token.balanceOf(ve_distributor) == 3 * UNIT
+    ve_distributor.sweep(token, UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == UNIT
+    assert token.balanceOf(ve_distributor) == 2 * UNIT
+    ve_distributor.sweep(token, sender=deployer)
+    assert token.balanceOf(deployer) == 3 * UNIT
+    assert token.balanceOf(ve_distributor) == 0
+
+def test_sweep_permission(project, deployer, alice, ve_distributor):
+    # only management can transfer tokens out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(ve_distributor, UNIT, sender=deployer)
+    with reverts():
+        ve_distributor.sweep(token, sender=alice)
+    ve_distributor.sweep(token, sender=deployer)
+
 def test_set_snapshot(chain, deployer, alice, veyfi, ve_distributor):
     # snapshot can be set
     ts = chain.pending_timestamp + 4 * EPOCH_LENGTH

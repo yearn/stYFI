@@ -10,6 +10,8 @@
         modifying calls to a downstream address.
 """
 
+from ethereum.ercs import IERC20
+
 interface IHooks:
     def on_transfer(_caller: address, _from: address, _to: address, _supply: uint256, _prev_staked_from: uint256, _prev_staked_to: uint256, _value: uint256): nonpayable
     def on_stake(_caller: address, _account: address, _prev_supply: uint256, _prev_staked: uint256, _value: uint256): nonpayable
@@ -94,6 +96,22 @@ def on_unstake(_account: address, _prev_supply: uint256, _prev_staked: uint256, 
     assert msg.sender == upstream
 
     extcall downstream.on_unstake(_account, _prev_supply, _prev_staked, _amount)
+
+@external
+def sweep(_token: address, _amount: uint256 = max_value(uint256)):
+    """
+    @notice Transfer out a token
+    @param _token The token address
+    @param _amount The amount of tokens. Defaults to all
+    @dev Can only be called by management
+    """
+    assert msg.sender == self.management
+
+    amount: uint256 = _amount
+    if _amount == max_value(uint256):
+        amount = staticcall IERC20(_token).balanceOf(self)
+
+    assert extcall IERC20(_token).transfer(msg.sender, amount, default_return_value=True)
 
 @external
 def set_instant_withdrawal(_account: address, _instant: bool):

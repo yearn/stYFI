@@ -358,6 +358,40 @@ def test_unstake_hook(deployer, alice, bob, yfi, dhooks, dstaking):
     dstaking.unstake(UNIT, sender=alice)
     assert dhooks.last_unstake() == (alice, 3 * UNIT, 2 * UNIT, UNIT)
 
+def test_sweep(project, deployer, dstaking):
+    # tokens can be transfered out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(dstaking, 3 * UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == 0
+    assert token.balanceOf(dstaking) == 3 * UNIT
+    dstaking.sweep(token, UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == UNIT
+    assert token.balanceOf(dstaking) == 2 * UNIT
+    dstaking.sweep(token, sender=deployer)
+    assert token.balanceOf(deployer) == 3 * UNIT
+    assert token.balanceOf(dstaking) == 0
+
+def test_sweep_blacklisted(deployer, yfi, staking, dstaking):
+    # YFI and stYFI cant be transfered out
+    yfi.mint(dstaking, UNIT, sender=deployer)
+    with reverts():
+        dstaking.sweep(yfi, sender=deployer)
+    
+    yfi.mint(deployer, UNIT, sender=deployer)
+    yfi.approve(dstaking, UNIT, sender=deployer)
+    dstaking.deposit(UNIT, sender=deployer)
+    assert staking.balanceOf(dstaking) == UNIT
+    with reverts():
+        dstaking.sweep(staking, sender=deployer)
+
+def test_sweep_permission(project, deployer, alice, dstaking):
+    # only management can transfer tokens out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(dstaking, UNIT, sender=deployer)
+    with reverts():
+        dstaking.sweep(token, sender=alice)
+    dstaking.sweep(token, sender=deployer)
+
 def test_set_killed(deployer, dstaking):
     # vault can be killed
     assert not dstaking.killed()

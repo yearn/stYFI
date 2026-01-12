@@ -306,6 +306,33 @@ def test_unstake_hook(deployer, alice, bob, underlying, hooks, depositor):
     depositor.unstake(UNIT // 4, sender=alice)
     assert hooks.last_unstake() == (alice, 3 * UNIT // 4, 2 * UNIT // 4, UNIT // 4)
 
+def test_sweep(project, deployer, depositor):
+    # tokens can be transfered out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(depositor, 3 * UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == 0
+    assert token.balanceOf(depositor) == 3 * UNIT
+    depositor.sweep(token, UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == UNIT
+    assert token.balanceOf(depositor) == 2 * UNIT
+    depositor.sweep(token, sender=deployer)
+    assert token.balanceOf(deployer) == 3 * UNIT
+    assert token.balanceOf(depositor) == 0
+
+def test_sweep_blacklisted(deployer, underlying, depositor):
+    # underlying token cant be transfered out
+    underlying.mint(depositor, UNIT, sender=deployer)
+    with reverts():
+        depositor.sweep(underlying, sender=deployer)
+
+def test_sweep_permission(project, deployer, alice, depositor):
+    # only management can transfer tokens out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(depositor, UNIT, sender=deployer)
+    with reverts():
+        depositor.sweep(token, sender=alice)
+    depositor.sweep(token, sender=deployer)
+
 def test_set_killed(deployer, depositor):
     # vault can be killed
     assert not depositor.killed()

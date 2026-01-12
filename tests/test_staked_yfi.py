@@ -440,6 +440,33 @@ def test_unstake_instant_toggle_hook(deployer, alice, yfi, hooks, staking):
     staking.withdraw(3 * UNIT, sender=alice)
     assert hooks.last_unstake() == (alice, 3 * UNIT, 3 * UNIT, 2 * UNIT)
 
+def test_sweep(project, deployer, staking):
+    # tokens can be transfered out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(staking, 3 * UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == 0
+    assert token.balanceOf(staking) == 3 * UNIT
+    staking.sweep(token, UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == UNIT
+    assert token.balanceOf(staking) == 2 * UNIT
+    staking.sweep(token, sender=deployer)
+    assert token.balanceOf(deployer) == 3 * UNIT
+    assert token.balanceOf(staking) == 0
+
+def test_sweep_blacklisted(deployer, yfi, staking):
+    # YFI cant be transfered out
+    yfi.mint(staking, UNIT, sender=deployer)
+    with reverts():
+        staking.sweep(yfi, sender=deployer)
+
+def test_sweep_permission(project, deployer, alice, staking):
+    # only management can transfer tokens out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(staking, UNIT, sender=deployer)
+    with reverts():
+        staking.sweep(token, sender=alice)
+    staking.sweep(token, sender=deployer)
+
 def test_set_killed(deployer, staking):
     # vault can be killed
     assert not staking.killed()

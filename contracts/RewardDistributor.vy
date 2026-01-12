@@ -181,6 +181,22 @@ def components(_component: address) -> ComponentData:
     return ComponentData(next=next, epoch=epoch, numerator=numerator, denominator=denominator)
 
 @external
+def sweep(_token: address, _amount: uint256 = max_value(uint256)):
+    """
+    @notice Transfer out a token
+    @param _token The token address
+    @param _amount The amount of tokens. Defaults to all
+    @dev Can only be called by management
+    """
+    assert msg.sender == self.management
+
+    amount: uint256 = _amount
+    if _amount == max_value(uint256):
+        amount = staticcall IERC20(_token).balanceOf(self)
+
+    assert extcall IERC20(_token).transfer(msg.sender, amount, default_return_value=True)
+
+@external
 def set_pull(_pull: address):
     """
     @notice Set the address to pull future rewards from

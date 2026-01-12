@@ -170,3 +170,24 @@ def test_readd_component(chain, deployer, distributor, genesis, components):
     assert distributor.components(components[0]) == (COMPONENTS_SENTINEL, 1, 3, 2)
     assert distributor.components(COMPONENTS_SENTINEL) == (components[0], 0, 0, 0)
     assert distributor.num_components() == 1
+
+def test_sweep(project, deployer, distributor):
+    # tokens can be transfered out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(distributor, 3 * UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == 0
+    assert token.balanceOf(distributor) == 3 * UNIT
+    distributor.sweep(token, UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == UNIT
+    assert token.balanceOf(distributor) == 2 * UNIT
+    distributor.sweep(token, sender=deployer)
+    assert token.balanceOf(deployer) == 3 * UNIT
+    assert token.balanceOf(distributor) == 0
+
+def test_sweep_permission(project, deployer, alice, distributor):
+    # only management can transfer tokens out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(distributor, UNIT, sender=deployer)
+    with reverts():
+        distributor.sweep(token, sender=alice)
+    distributor.sweep(token, sender=deployer)

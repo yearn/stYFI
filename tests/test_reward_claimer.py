@@ -86,3 +86,24 @@ def test_remove_component_permission(deployer, alice, claimer, components):
     with reverts():
         claimer.remove_component(sender=alice)
     claimer.remove_component(sender=deployer)
+
+def test_sweep(project, deployer, claimer):
+    # tokens can be transfered out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(claimer, 3 * UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == 0
+    assert token.balanceOf(claimer) == 3 * UNIT
+    claimer.sweep(token, UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == UNIT
+    assert token.balanceOf(claimer) == 2 * UNIT
+    claimer.sweep(token, sender=deployer)
+    assert token.balanceOf(deployer) == 3 * UNIT
+    assert token.balanceOf(claimer) == 0
+
+def test_sweep_permission(project, deployer, alice, claimer):
+    # only management can transfer tokens out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(claimer, UNIT, sender=deployer)
+    with reverts():
+        claimer.sweep(token, sender=alice)
+    claimer.sweep(token, sender=deployer)
