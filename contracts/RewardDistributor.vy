@@ -116,6 +116,7 @@ def rewards(_component: address, _epoch: uint256) -> uint256:
     return self._rewards(_component, _epoch)[1]
 
 @external
+@nonreentrant
 def claim() -> (uint256, uint256, uint256):
     """
     @notice Claim epoch rewards in order
@@ -124,7 +125,7 @@ def claim() -> (uint256, uint256, uint256):
     """
     # weights and amounts are only finalized at the end of the epoch
     current: uint256 = self._epoch()
-    assert self._sync(current)
+    assert self._sync(current, 32)
 
     # make sure the caller is a component that was enabled at some point
     next: address = empty(address)
@@ -146,12 +147,14 @@ def claim() -> (uint256, uint256, uint256):
     return epoch, weight, rewards
 
 @external
-def sync() -> bool:
+def sync(_range: uint256 = 32) -> bool:
     """
     @notice Finalize weights and rewards for completed epochs
+    @param _range Maximum number of epochs to update at once
     @return True: fully synchronized, False: not fully synchronized
     """
-    return self._sync(self._epoch())
+    assert _range > 0 and _range <= 32
+    return self._sync(self._epoch(), _range)
 
 @external
 def deposit(_epoch: uint256, _amount: uint256):
@@ -311,7 +314,7 @@ def _epoch() -> uint256:
     return unsafe_div(block.timestamp - genesis, EPOCH_LENGTH)
 
 @internal
-def _sync(_current: uint256) -> bool:
+def _sync(_current: uint256, _range: uint256) -> bool:
     """
     @notice Finalize weights and rewards for completed epochs in order
     """
@@ -321,7 +324,7 @@ def _sync(_current: uint256) -> bool:
         return True
 
     pull: IPull = self.pull
-    for i: uint256 in range(32):
+    for i: uint256 in range(_range, bound=32):
         if epoch == _current:
             break
         
