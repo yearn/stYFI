@@ -367,7 +367,7 @@ def set_reward_expiration(_expiration: uint256, _bounty: uint256, _recipient: ad
     @dev Can only be called by management
     """
     assert msg.sender == self.management
-    assert _expiration > 1
+    assert _expiration > 1 and _expiration < 32
     assert _bounty <= BOUNTY_PRECISION
     assert _recipient != empty(address) or _bounty == BOUNTY_PRECISION
 
