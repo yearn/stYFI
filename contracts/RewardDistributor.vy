@@ -127,14 +127,11 @@ def claim() -> (uint256, uint256, uint256):
     current: uint256 = self._epoch()
     assert self._sync(current, 32)
 
-    # make sure the caller is a component that was enabled at some point
     next: address = empty(address)
     epoch: uint256 = 0
     num: uint256 = 0
     den: uint256 = 0
     next, epoch, num, den = self._unpack(self.packed_components[msg.sender])
-
-    assert epoch > 0 or next != empty(address)
     assert epoch < current
 
     weight: uint256 = 0
