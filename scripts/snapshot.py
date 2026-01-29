@@ -1,6 +1,5 @@
 from ape import Contract, networks
 from json import dump, load
-from time import time
 
 YFI = '0x0bc529c00C6401aEF6D220BE8C6Ea1667F6Ad93e'
 VEYFI = '0x90c1f9220d90d3966FbeE24045EDd73E1d588aD5'
@@ -39,14 +38,13 @@ def main():
     accounts = load(file)
 
     # build snapshot
-    now = int(time())
     max_lock_end = SNAPSHOT_TS + MAX_LOCK_LENGTH
     snapshot = []
     for account in accounts:
         amount, end = veyfi.locked(account, block_id=SNAPSHOT_HEIGHT)
         amount_current, end_current = veyfi.locked(account)
 
-        if amount == 0 or now >= end:
+        if amount == 0 or end < GENESIS + EPOCH_LENGTH:
             # no lock or expired lock
             continue
 
