@@ -55,6 +55,7 @@ recipient: public(immutable(address))
 gauge: public(immutable(IERC4626))
 token: public(immutable(IERC20))
 factory: public(immutable(IFactory))
+end_time: public(immutable(uint256))
 operators: public(HashMap[address, bool])
 
 DEPOSITOR: public(constant(address)) = 0x3d4Ced97ADb0ae3A53DA95a47fFc749aAd26BC8f
@@ -71,6 +72,7 @@ def __init__(_vest: address):
     gauge = IERC4626(staticcall vest.token())
     token = IERC20(staticcall gauge.asset())
     factory = IFactory(staticcall vest.factory())
+    end_time = staticcall vest.end_time()
 
     assert staticcall IERC4626(DEPOSITOR).asset() == token.address
 
@@ -148,7 +150,7 @@ def call(_target: address, _data: Bytes[2048]):
     """
     if msg.sender == recipient:
         if _target in [gauge.address, token.address, DEPOSITOR]:
-            assert block.timestamp >= staticcall vest.end_time()
+            assert block.timestamp >= end_time
     else:
         assert self.operators[msg.sender]
     raw_call(_target, _data, value=msg.value)

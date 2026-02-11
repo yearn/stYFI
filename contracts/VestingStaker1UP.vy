@@ -54,6 +54,7 @@ vest: public(immutable(IVest))
 recipient: public(immutable(address))
 token: public(immutable(IERC20))
 factory: public(immutable(IFactory))
+end_time: public(immutable(uint256))
 operators: public(HashMap[address, bool])
 
 DEPOSITOR: public(constant(address)) = 0x52Aa16860E0D42B6a7b6ecC15688472eb20135c9
@@ -70,6 +71,7 @@ def __init__(_vest: address):
     recipient = staticcall vest.recipient()
     token = IERC20(staticcall vest.token())
     factory = IFactory(staticcall vest.factory())
+    end_time = staticcall vest.end_time()
 
     assert staticcall IERC4626(DEPOSITOR).asset() == token.address
 
@@ -145,7 +147,7 @@ def call(_target: address, _data: Bytes[2048]):
     """
     if msg.sender == recipient:
         if _target in [token.address, DEPOSITOR]:
-            assert block.timestamp >= staticcall vest.end_time()
+            assert block.timestamp >= end_time
     else:
         assert self.operators[msg.sender]
     raw_call(_target, _data, value=msg.value)
