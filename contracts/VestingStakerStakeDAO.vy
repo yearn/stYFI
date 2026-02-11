@@ -17,6 +17,7 @@ interface IVest:
     def recipient() -> address: view
     def token() -> address: view
     def factory() -> address: view
+    def end_time() -> uint256: view
     def call(_target: address, _data: Bytes[2048]): payable
 
 interface IDepositor:
@@ -152,7 +153,8 @@ def call(_target: address, _data: Bytes[2048]):
     @param _data The calldata of the call
     """
     if msg.sender == recipient:
-        assert _target not in [gauge.address, token.address, DEPOSITOR]
+        if _target in [gauge.address, token.address, DEPOSITOR]:
+            assert block.timestamp >= staticcall vest.end_time()
     else:
         assert self.operators[msg.sender]
     raw_call(_target, _data, value=msg.value)

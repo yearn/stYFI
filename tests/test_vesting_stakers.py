@@ -114,9 +114,19 @@ def test_1up(accounts, chain, networks, deployer, ychad, mock_operator, reward):
     staker.set_operator(mock_operator, True, sender=recipient)
 
     # call operator
+    with chain.isolate():
+        chain.pending_timestamp += STREAM_DURATION
+        mock_operator.redeem(staker, depositor, UNIT, sender=deployer)
+        assert token.balanceOf(deployer) == UNIT_1UP
+
+    # cant call redeem directly on llYFI
     chain.pending_timestamp += STREAM_DURATION
-    mock_operator.redeem(staker, depositor, UNIT, sender=deployer)
-    assert token.balanceOf(deployer) == UNIT_1UP
+    with reverts():
+        staker.call(depositor, depositor.redeem.encode_input(UNIT, recipient, staker), sender=recipient)
+
+    # .. unless vest has expired
+    chain.pending_timestamp = vest.end_time()
+    staker.call(depositor, depositor.redeem.encode_input(UNIT, recipient, staker), sender=recipient)
 
 def test_cove(accounts, chain, networks, deployer, ychad, mock_operator, reward):
     vest = Contract(VEST_COVE)
@@ -182,9 +192,19 @@ def test_cove(accounts, chain, networks, deployer, ychad, mock_operator, reward)
     staker.set_operator(mock_operator, True, sender=recipient)
 
     # call operator
+    with chain.isolate():
+        chain.pending_timestamp += STREAM_DURATION
+        mock_operator.redeem(staker, depositor, UNIT, sender=deployer)
+        assert token.balanceOf(deployer) == UNIT
+
+    # cant call redeem directly on llYFI
     chain.pending_timestamp += STREAM_DURATION
-    mock_operator.redeem(staker, depositor, UNIT, sender=deployer)
-    assert token.balanceOf(deployer) == UNIT
+    with reverts():
+        staker.call(depositor, depositor.redeem.encode_input(UNIT, recipient, staker), sender=recipient)
+
+    # .. unless vest has expired
+    chain.pending_timestamp = vest.end_time()
+    staker.call(depositor, depositor.redeem.encode_input(UNIT, recipient, staker), sender=recipient)
 
 def test_stakedao(accounts, chain, networks, deployer, ychad, mock_operator, reward):
     vest = Contract(VEST_STAKEDAO)
@@ -250,6 +270,16 @@ def test_stakedao(accounts, chain, networks, deployer, ychad, mock_operator, rew
     staker.set_operator(mock_operator, True, sender=recipient)
 
     # call operator
+    with chain.isolate():
+        chain.pending_timestamp += STREAM_DURATION
+        mock_operator.redeem(staker, depositor, UNIT, sender=deployer)
+        assert token.balanceOf(deployer) == UNIT
+
+    # cant call redeem directly on llYFI
     chain.pending_timestamp += STREAM_DURATION
-    mock_operator.redeem(staker, depositor, UNIT, sender=deployer)
-    assert token.balanceOf(deployer) == UNIT
+    with reverts():
+        staker.call(depositor, depositor.redeem.encode_input(UNIT, recipient, staker), sender=recipient)
+
+    # .. unless vest has expired
+    chain.pending_timestamp = vest.end_time()
+    staker.call(depositor, depositor.redeem.encode_input(UNIT, recipient, staker), sender=recipient)
