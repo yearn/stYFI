@@ -29,13 +29,20 @@ interface IGauge:
     def deposit(_amount: uint256, _recipient: address): nonpayable
     def withdraw(_amount: uint256): nonpayable
 
+interface IRewardClaimer:
+    def claim(_recipient: address) -> uint256: nonpayable
+
 event Stake:
     amount: uint256
 
 event Unstake:
     amount: uint256
 
-event Claim:
+event ClaimStream:
+    amount: uint256
+
+event ClaimRewards:
+    receiver: address
     amount: uint256
 
 event SetOperator:
@@ -54,6 +61,7 @@ whitelist: public(immutable(IWhitelist))
 operators: public(HashMap[address, bool])
 
 DEPOSITOR: public(constant(address)) = 0xA16F6FC7380300525C812ea2733Ad62DDA58143B
+REWARD_CLAIMER: public(constant(IRewardClaimer)) = IRewardClaimer(0xA82454009E01Ae697012a73cB232d85e61B05e50)
 
 @deploy
 def __init__(_vest: address, _whitelist: address):
@@ -95,7 +103,7 @@ def unstake(_amount: uint256):
     log Unstake(amount=_amount)
 
 @external
-def claim(_amount: uint256 = max_value(uint256)):
+def claim_stream(_amount: uint256 = max_value(uint256)):
     """
     @notice Claim from unstaking stream
     @param _amount Amount of YFI to claim
@@ -107,7 +115,19 @@ def claim(_amount: uint256 = max_value(uint256)):
     extcall IERC4626(DEPOSITOR).redeem(amount, self, self)
     extcall token.approve(gauge.address, amount)
     extcall gauge.deposit(amount, vest.address)
-    log Claim(amount=amount)
+    log ClaimStream(amount=amount)
+
+@external
+def claim_rewards(_receiver: address = msg.sender) -> uint256:
+    """
+    @notice Claim rewards
+    @param _receiver Address the rewards will be sent to
+    @return Amount of reward tokens claimed
+    """
+    assert msg.sender == recipient
+    amount: uint256 = extcall REWARD_CLAIMER.claim(_receiver)
+    log ClaimRewards(receiver=_receiver, amount=amount)
+    return amount
 
 @external
 def set_operator(_operator: address, _flag: bool):

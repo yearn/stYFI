@@ -24,13 +24,20 @@ interface IDepositor:
 interface IWhitelist:
     def whitelist(_vest: address, _operator: address) -> bool: view
 
+interface IRewardClaimer:
+    def claim(_recipient: address) -> uint256: nonpayable
+
 event Stake:
     amount: uint256
 
 event Unstake:
     amount: uint256
 
-event Claim:
+event ClaimStream:
+    amount: uint256
+
+event ClaimRewards:
+    receiver: address
     amount: uint256
 
 event SetOperator:
@@ -48,6 +55,7 @@ whitelist: public(immutable(IWhitelist))
 operators: public(HashMap[address, bool])
 
 DEPOSITOR: public(constant(address)) = 0x52Aa16860E0D42B6a7b6ecC15688472eb20135c9
+REWARD_CLAIMER: public(constant(IRewardClaimer)) = IRewardClaimer(0xA82454009E01Ae697012a73cB232d85e61B05e50)
 SCALE: constant(uint256) = 69_420
 
 @deploy
@@ -88,7 +96,7 @@ def unstake(_amount: uint256):
     log Unstake(amount=_amount)
 
 @external
-def claim(_amount: uint256 = max_value(uint256)):
+def claim_stream(_amount: uint256 = max_value(uint256)):
     """
     @notice Claim from unstaking stream
     @param _amount Amount of YFI to claim
@@ -98,7 +106,19 @@ def claim(_amount: uint256 = max_value(uint256)):
     if _amount == max_value(uint256):
         amount = staticcall IERC4626(DEPOSITOR).maxRedeem(self)
     extcall IERC4626(DEPOSITOR).redeem(amount, vest.address, self)
-    log Claim(amount=amount)
+    log ClaimStream(amount=amount)
+
+@external
+def claim_rewards(_receiver: address = msg.sender) -> uint256:
+    """
+    @notice Claim rewards
+    @param _receiver Address the rewards will be sent to
+    @return Amount of reward tokens claimed
+    """
+    assert msg.sender == recipient
+    amount: uint256 = extcall REWARD_CLAIMER.claim(_receiver)
+    log ClaimRewards(receiver=_receiver, amount=amount)
+    return amount
 
 @external
 def set_operator(_operator: address, _flag: bool):
