@@ -30,10 +30,6 @@ def mock_operator(deployer):
     return project.MockOperator.deploy(sender=deployer)
 
 @fixture
-def whitelist(deployer):
-    return project.VestingStakerOperatorWhitelist.deploy(sender=deployer)
-
-@fixture
 def reward(accounts, chain, networks, deployer):
     usdc = Contract(USDC)
     master = accounts[usdc.masterMinter()]
@@ -55,12 +51,12 @@ def reward(accounts, chain, networks, deployer):
 
     return reward
 
-def test_1up(accounts, chain, networks, deployer, ychad, mock_operator, whitelist, reward):
+def test_1up(accounts, chain, networks, deployer, ychad, mock_operator, reward):
     vest = Contract(VEST_1UP)
     token = Contract(SUPYFI)
     assert vest.token() == token
 
-    staker = project.VestingStaker1UP.deploy(vest, whitelist, sender=deployer)
+    staker = project.VestingStaker1UP.deploy(vest, sender=deployer)
     depositor = project.LiquidLockerDepositor.at(staker.DEPOSITOR())
 
     factory = Contract(VEST_FACTORY)
@@ -114,7 +110,7 @@ def test_1up(accounts, chain, networks, deployer, ychad, mock_operator, whitelis
         mock_operator.redeem(staker, depositor, UNIT, sender=deployer)
 
     # add operator
-    whitelist.set_whitelist(vest, mock_operator, True, sender=ychad)
+    factory.set_operator(vest, mock_operator, True, sender=ychad)
     staker.set_operator(mock_operator, True, sender=recipient)
 
     # call operator
@@ -122,13 +118,13 @@ def test_1up(accounts, chain, networks, deployer, ychad, mock_operator, whitelis
     mock_operator.redeem(staker, depositor, UNIT, sender=deployer)
     assert token.balanceOf(deployer) == UNIT_1UP
 
-def test_cove(accounts, chain, networks, deployer, ychad, mock_operator, whitelist, reward):
+def test_cove(accounts, chain, networks, deployer, ychad, mock_operator, reward):
     vest = Contract(VEST_COVE)
     gauge = Contract(COVEYFI_GAUGE)
     assert vest.token() == gauge
     token = Contract(gauge.asset())
 
-    staker = project.VestingStakerCove.deploy(vest, whitelist, sender=deployer)
+    staker = project.VestingStakerCove.deploy(vest, sender=deployer)
     depositor = project.LiquidLockerDepositor.at(staker.DEPOSITOR())
 
     factory = Contract(VEST_FACTORY)
@@ -182,7 +178,7 @@ def test_cove(accounts, chain, networks, deployer, ychad, mock_operator, whiteli
         mock_operator.redeem(staker, depositor, UNIT, sender=deployer)
 
     # add operator
-    whitelist.set_whitelist(vest, mock_operator, True, sender=ychad)
+    factory.set_operator(vest, mock_operator, True, sender=ychad)
     staker.set_operator(mock_operator, True, sender=recipient)
 
     # call operator
@@ -190,13 +186,13 @@ def test_cove(accounts, chain, networks, deployer, ychad, mock_operator, whiteli
     mock_operator.redeem(staker, depositor, UNIT, sender=deployer)
     assert token.balanceOf(deployer) == UNIT
 
-def test_stakedao(accounts, chain, networks, deployer, ychad, mock_operator, whitelist, reward):
+def test_stakedao(accounts, chain, networks, deployer, ychad, mock_operator, reward):
     vest = Contract(VEST_STAKEDAO)
     gauge = Contract(SDYFI_GAUGE)
     assert vest.token() == gauge
     token = Contract(gauge.staking_token())
 
-    staker = project.VestingStakerStakeDAO.deploy(vest, whitelist, sender=deployer)
+    staker = project.VestingStakerStakeDAO.deploy(vest, sender=deployer)
     depositor = project.LiquidLockerDepositor.at(staker.DEPOSITOR())
 
     factory = Contract(VEST_FACTORY)
@@ -250,7 +246,7 @@ def test_stakedao(accounts, chain, networks, deployer, ychad, mock_operator, whi
         mock_operator.redeem(staker, depositor, UNIT, sender=deployer)
 
     # add operator
-    whitelist.set_whitelist(vest, mock_operator, True, sender=ychad)
+    factory.set_operator(vest, mock_operator, True, sender=ychad)
     staker.set_operator(mock_operator, True, sender=recipient)
 
     # call operator

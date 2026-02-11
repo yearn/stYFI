@@ -16,13 +16,14 @@ from ethereum.ercs import IERC4626
 interface IVest:
     def recipient() -> address: view
     def token() -> address: view
+    def factory() -> address: view
     def call(_target: address, _data: Bytes[2048]): payable
 
 interface IDepositor:
     def unstake(_amount: uint256): nonpayable
 
-interface IWhitelist:
-    def whitelist(_vest: address, _operator: address) -> bool: view
+interface IFactory:
+    def operators(_vest: address, _operator: address) -> bool: view
 
 interface IRewardClaimer:
     def claim(_recipient: address) -> uint256: nonpayable
@@ -52,24 +53,23 @@ vest: public(immutable(IVest))
 recipient: public(immutable(address))
 gauge: public(immutable(IERC4626))
 token: public(immutable(IERC20))
-whitelist: public(immutable(IWhitelist))
+factory: public(immutable(IFactory))
 operators: public(HashMap[address, bool])
 
 DEPOSITOR: public(constant(address)) = 0x3d4Ced97ADb0ae3A53DA95a47fFc749aAd26BC8f
 REWARD_CLAIMER: public(constant(IRewardClaimer)) = IRewardClaimer(0xA82454009E01Ae697012a73cB232d85e61B05e50)
 
 @deploy
-def __init__(_vest: address, _whitelist: address):
+def __init__(_vest: address):
     """
     @notice Constructor
     @param _vest Address of the vest
-    @param _whitelist Operator whitelist address
     """
     vest = IVest(_vest)
     recipient = staticcall vest.recipient()
     gauge = IERC4626(staticcall vest.token())
     token = IERC20(staticcall gauge.asset())
-    whitelist = IWhitelist(_whitelist)
+    factory = IFactory(staticcall vest.factory())
 
     assert staticcall IERC4626(DEPOSITOR).asset() == token.address
 
@@ -133,7 +133,7 @@ def set_operator(_operator: address, _flag: bool):
     assert msg.sender == recipient
     assert _operator != empty(address)
     if _flag:
-        assert staticcall whitelist.whitelist(vest.address, _operator)
+        assert staticcall factory.operators(vest.address, _operator)
     self.operators[_operator] = _flag
     log SetOperator(operator=_operator, flag=_flag)
 
