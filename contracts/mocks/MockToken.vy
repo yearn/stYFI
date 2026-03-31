@@ -11,7 +11,7 @@ allowance: public(HashMap[address, HashMap[address, uint256]])
 
 name: public(constant(String[9])) = "MockToken"
 symbol: public(constant(String[4])) = "MOCK"
-decimals: public(constant(uint8)) = 18
+decimals: public(uint8)
 
 event Transfer:
     sender: indexed(address)
@@ -25,7 +25,12 @@ event Approval:
 
 @deploy
 def __init__():
+    self.decimals = 18
     log Transfer(sender=empty(address), receiver=msg.sender, value=0)
+
+@external
+def set_decimals(_decimals: uint8):
+    self.decimals = _decimals
 
 @external
 def transfer(_to: address, _value: uint256) -> bool:
