@@ -190,7 +190,7 @@ def test_claim_ybc(chain, project, deployer, alice, bob, token, accountant, chai
     team = factory.deploy("A", sender=alice).return_value
 
     vault = project.MockVault.deploy(token, sender=deployer)
-    ybc = project.BonusRecipient.deploy(vault, bob, sender=deployer)
+    ybc = project.YBCBonusRecipient.deploy(vault, bob, sender=deployer)
     distributor.set_ybc(ybc, 2500, sender=deployer)
     token.mint(distributor, 10 * UNIT, sender=deployer)
     accountant.adjust_revenue(team, 0, 8 * UNIT, True, sender=deployer)
@@ -203,3 +203,24 @@ def test_claim_ybc(chain, project, deployer, alice, bob, token, accountant, chai
     assert distributor.claim(team, sender=alice).return_value == (3 * UNIT, UNIT)
     assert token.balanceOf(alice) == 3 * UNIT
     assert vault.balanceOf(bob) == UNIT
+
+def test_sweep(project, deployer, distributor):
+    # tokens can be transfered out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(distributor, 3 * UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == 0
+    assert token.balanceOf(distributor) == 3 * UNIT
+    distributor.sweep(token, UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == UNIT
+    assert token.balanceOf(distributor) == 2 * UNIT
+    distributor.sweep(token, sender=deployer)
+    assert token.balanceOf(deployer) == 3 * UNIT
+    assert token.balanceOf(distributor) == 0
+
+def test_sweep_permission(project, deployer, alice, distributor):
+    # only management can transfer tokens out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(distributor, UNIT, sender=deployer)
+    with reverts():
+        distributor.sweep(token, sender=alice)
+    distributor.sweep(token, sender=deployer)

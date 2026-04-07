@@ -130,6 +130,27 @@ def test_return_funding(deployer, alice, accountant, token, vault, distributor, 
     assert vault.balanceOf(alice) == 2 * SMALL_UNIT
     assert accountant.team_costs(team, 0) == 4 * UNIT
 
+def test_sweep(project, deployer, alice, team):
+    # tokens can be transfered out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(team, 3 * UNIT, sender=deployer)
+    assert token.balanceOf(alice) == 0
+    assert token.balanceOf(team) == 3 * UNIT
+    team.sweep(token, UNIT, sender=alice)
+    assert token.balanceOf(alice) == UNIT
+    assert token.balanceOf(team) == 2 * UNIT
+    team.sweep(token, sender=alice)
+    assert token.balanceOf(alice) == 3 * UNIT
+    assert token.balanceOf(team) == 0
+
+def test_sweep_permission(project, deployer, alice, bob, team):
+    # only management can transfer tokens out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(team, UNIT, sender=deployer)
+    with reverts():
+        team.sweep(token, sender=bob)
+    team.sweep(token, sender=alice)
+
 def test_set_owner(alice, bob, team):
     # owner can propose a replacement
     assert team.owner() == alice

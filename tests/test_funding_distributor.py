@@ -175,3 +175,62 @@ def test_refund(deployer, alice, registry, accountant, distributor, token, oracl
     assert distributor.costs(alice, 0, token) == (2 * UNIT, 4 * UNIT)
     assert accountant.team_costs(alice, 0) == 8 * UNIT
     assert accountant.global_costs(0) == 8 * UNIT
+
+def test_sweep(project, deployer, distributor):
+    # tokens can be transfered out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(distributor, 3 * UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == 0
+    assert token.balanceOf(distributor) == 3 * UNIT
+    distributor.sweep(token, UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == UNIT
+    assert token.balanceOf(distributor) == 2 * UNIT
+    distributor.sweep(token, sender=deployer)
+    assert token.balanceOf(deployer) == 3 * UNIT
+    assert token.balanceOf(distributor) == 0
+
+def test_sweep_permission(project, deployer, alice, distributor):
+    # only management can transfer tokens out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(distributor, UNIT, sender=deployer)
+    with reverts():
+        distributor.sweep(token, sender=alice)
+    distributor.sweep(token, sender=deployer)
+
+def test_set_management(deployer, alice, distributor):
+    # management can propose a replacement
+    assert distributor.management() == deployer
+    assert distributor.pending_management() == ZERO_ADDRESS
+    distributor.set_management(alice, sender=deployer)
+    assert distributor.management() == deployer
+    assert distributor.pending_management() == alice
+
+def test_set_management_undo(deployer, alice, distributor):
+    # proposed replacement can be undone
+    distributor.set_management(alice, sender=deployer)
+    distributor.set_management(ZERO_ADDRESS, sender=deployer)
+    assert distributor.management() == deployer
+    assert distributor.pending_management() == ZERO_ADDRESS
+
+def test_set_management_permission(alice, distributor):
+    # only management can propose a replacement
+    with reverts():
+        distributor.set_management(alice, sender=alice)
+
+def test_accept_management(deployer, alice, distributor):
+    # replacement can accept management role
+    distributor.set_management(alice, sender=deployer)
+    distributor.accept_management(sender=alice)
+    assert distributor.management() == alice
+    assert distributor.pending_management() == ZERO_ADDRESS
+
+def test_accept_management_early(alice, distributor):
+    # cant accept management role without being nominated
+    with reverts():
+        distributor.accept_management(sender=alice)
+
+def test_accept_management_wrong(deployer, alice, bob, distributor):
+    # cant accept management role without being the nominee
+    distributor.set_management(alice, sender=deployer)
+    with reverts():
+        distributor.accept_management(sender=bob)
