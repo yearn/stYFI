@@ -29,7 +29,7 @@ scale: public(immutable(uint256))
 def __init__(_vault: address):
     """
     @notice Constructor
-    @param _genesis Budget period genesis timestamp
+    @param _vault Vault address
     """
     vault = _vault
     token = staticcall IERC4626(_vault).asset()

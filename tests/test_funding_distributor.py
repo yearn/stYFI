@@ -51,12 +51,14 @@ def test_claim_immediate(deployer, alice, bob, registry, accountant, distributor
     distributor.set_price_oracle(token, oracle, sender=deployer)
 
     # claim
+    assert distributor.claimable(0) == 4 * UNIT
     assert distributor.costs(alice, 0, token) == (0, 0)
     assert accountant.team_costs(alice, 0) == 0
     assert accountant.global_costs(0) == 0
     assert token.balanceOf(distributor) == 4 * UNIT
     assert token.balanceOf(bob) == 0
     assert distributor.claim(0, UNIT, bob, sender=alice).return_value == (0, 2 * UNIT, ZERO_ADDRESS)
+    assert distributor.claimable(0) == 3 * UNIT
     assert distributor.approvals(0) == (alice, 0, token, 4 * UNIT, 0, UNIT)
     assert distributor.costs(alice, 0, token) == (UNIT, 2 * UNIT)
     assert accountant.team_costs(alice, 0) == 2 * UNIT
@@ -67,6 +69,7 @@ def test_claim_immediate(deployer, alice, bob, registry, accountant, distributor
     # change price, claim again from the same approval
     oracle.set_price(token, 5 * UNIT, sender=deployer)
     assert distributor.claim(0, 2 * UNIT, alice, sender=alice).return_value == (0, 10 * UNIT, ZERO_ADDRESS)
+    assert distributor.claimable(0) == UNIT
     assert distributor.approvals(0) == (alice, 0, token, 4 * UNIT, 0, 3 * UNIT)
     assert distributor.costs(alice, 0, token) == (3 * UNIT, 4 * UNIT)
     assert accountant.team_costs(alice, 0) == 12 * UNIT

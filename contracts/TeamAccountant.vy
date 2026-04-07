@@ -55,7 +55,6 @@ event SetManagement:
     management: indexed(address)
 
 INCREMENT: constant(bool) = True
-DECREMENT: constant(bool) = False
 
 @deploy
 def __init__():

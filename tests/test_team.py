@@ -112,7 +112,7 @@ def test_claim_funding(deployer, alice, bob, accountant, token, vault, distribut
     assert accountant.team_costs(team, 0) == 2 * UNIT
 
     vault.set_scale(3, sender=deployer)
-    assert team.claim_funding(0, 2 * SMALL_UNIT, sender=alice).return_value == (vault, 6 * UNIT, ZERO_ADDRESS)
+    assert team.claim_funding(0, sender=alice).return_value == (vault, 6 * UNIT, ZERO_ADDRESS)
     assert vault.balanceOf(alice) == 2 * SMALL_UNIT
     assert accountant.team_costs(team, 0) == 8 * UNIT
 
@@ -131,11 +131,39 @@ def test_return_funding(deployer, alice, accountant, token, vault, distributor, 
     assert accountant.team_costs(team, 0) == 4 * UNIT
 
 def test_set_owner(alice, bob, team):
+    # owner can propose a replacement
     assert team.owner() == alice
+    assert team.pending_owner() == ZERO_ADDRESS
     team.set_owner(bob, sender=alice)
-    assert team.owner() == bob
+    assert team.owner() == alice
+    assert team.pending_owner() == bob
 
-def test_set_owner_permission(alice, bob, team):
+def test_set_owner_undo(alice, bob, team):
+    # proposed replacement can be undone
+    team.set_owner(bob, sender=alice)
+    team.set_owner(ZERO_ADDRESS, sender=alice)
+    assert team.owner() == alice
+    assert team.pending_owner() == ZERO_ADDRESS
+
+def test_set_owner_permission(bob, team):
+    # only owner can propose a replacement
     with reverts():
         team.set_owner(bob, sender=bob)
+
+def test_accept_owner(alice, bob, team):
+    # replacement can accept ownership role
     team.set_owner(bob, sender=alice)
+    team.accept_owner(sender=bob)
+    assert team.owner() == bob
+    assert team.pending_owner() == ZERO_ADDRESS
+
+def test_accept_owner_early(bob, team):
+    # cant accept ownership role without being nominated
+    with reverts():
+        team.accept_owner(sender=bob)
+
+def test_accept_owner_wrong(alice, bob, charlie, team):
+    # cant accept management role without being the nominee
+    team.set_owner(bob, sender=alice)
+    with reverts():
+        team.accept_owner(sender=charlie)

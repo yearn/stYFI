@@ -24,12 +24,14 @@ interface IRevenueRecipient:
 
 interface IFundingDistributor:
     def token(_idx: uint256) -> address: view
+    def claimable(_idx: uint256) -> uint256: view
     def claim(_idx: uint256, _amount: uint256, _recipient: address) -> (uint256, uint256, address): nonpayable
     def refund(_idx: uint256, _amount: uint256) -> (uint256, uint256): nonpayable
 
 name: public(String[100])
 registry: public(IRegistry)
 owner: public(address)
+pending_owner: public(address)
 
 event DepositRevenue:
     period: indexed(uint256)
@@ -55,14 +57,14 @@ event ReturnFunding:
     refund: uint256
     sender: address
 
+event PendingOwner:
+    owner: indexed(address)
+
 event SetOwner:
     owner: indexed(address)
 
 event Migrate:
     registry: indexed(address)
-
-INCREMENT: constant(bool) = True
-DECREMENT: constant(bool) = False
 
 @deploy
 def __init__():
@@ -103,26 +105,29 @@ def deposit_revenue(_token: address, _amount: uint256) -> uint256:
     return revenue
 
 @external
-def claim_funding(_idx: uint256, _amount: uint256, _recipient: address = msg.sender) -> (address, uint256, address):
+def claim_funding(_idx: uint256, _amount: uint256 = max_value(uint256), _recipient: address = msg.sender) -> (address, uint256, address):
     """
     @notice Claim funding
     @param _idx Approval index
-    @param _amount Token amount
+    @param _amount Token amount. Defaults to all available
     @param _recipient Receiver of the funding
     @return Tuple with: token address, USD value of funding (18 decimals), vesting contract (if applicable)
     """
     assert msg.sender == self.owner
-    assert _amount > 0
 
     distributor: address = staticcall self.registry.funding_distributor()
     token: address = staticcall IFundingDistributor(distributor).token(_idx)
 
+    amount: uint256 = _amount
+    if _amount == max_value(uint256):
+        amount = staticcall IFundingDistributor(distributor).claimable(_idx)
+
     period: uint256 = 0
     cost: uint256 = 0
     vest: address = empty(address)
-    period, cost, vest = extcall IFundingDistributor(distributor).claim(_idx, _amount, _recipient)
+    period, cost, vest = extcall IFundingDistributor(distributor).claim(_idx, amount, _recipient)
 
-    log ClaimFunding(idx=_idx, period=period, token=token, amount=_amount, cost=cost, vest=vest, recipient=_recipient)
+    log ClaimFunding(idx=_idx, period=period, token=token, amount=amount, cost=cost, vest=vest, recipient=_recipient)
     return token, cost, vest
 
 @external
@@ -167,14 +172,26 @@ def sweep(_token: address, _amount: uint256 = max_value(uint256)):
 @external
 def set_owner(_owner: address):
     """
-    @notice Set a new owner
-    @param _owner New owner address
-    @dev Can only be called by the current owner
+    @notice Set the pending owner address.
+            Needs to be accepted by that account separately to transfer ownership over
+    @param _owner New pending owner address
     """
     assert msg.sender == self.owner
 
-    self.owner = _owner
-    log SetOwner(owner=_owner)
+    self.pending_owner = _owner
+    log PendingOwner(owner=_owner)
+
+@external
+def accept_owner():
+    """
+    @notice Accept ownership role.
+            Can only be called by account previously marked as pending by current owner
+    """
+    assert msg.sender == self.pending_owner
+
+    self.pending_owner = empty(address)
+    self.owner = msg.sender
+    log SetOwner(owner=msg.sender)
 
 @external
 def migrate(_registry: address):

@@ -28,6 +28,7 @@ struct Cost:
 
 interface IFundingDistributor:
     def token(_idx: uint256) -> address: view
+    def claimable(_idx: uint256) -> uint256: view
     def claim(_idx: uint256, _amount: uint256, _recipient: address) -> (uint256, uint256, address): nonpayable
     def refund(_idx: uint256, _amount: uint256) -> (uint256, uint256): nonpayable
 implements: IFundingDistributor
@@ -168,6 +169,19 @@ def approve(_team: address, _period: uint256, _token: address, _amount: uint256,
 
     log ApproveFunding(idx=idx, team=_team, period=_period, token=_token, amount=_amount, duration=_duration)
     return idx
+
+@external
+@view
+def claimable(_idx: uint256) -> uint256:
+    team: address = self.approvals[_idx].team
+    if not staticcall self.registry.is_team(team):
+        return 0
+
+    period: uint256 = self._period()
+    if period != self.approvals[_idx].period:
+        return 0
+
+    return self.approvals[_idx].amount - self.approvals[_idx].used
 
 @external
 def claim(_idx: uint256, _amount: uint256, _recipient: address) -> (uint256, uint256, address):

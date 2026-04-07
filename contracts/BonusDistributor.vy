@@ -66,8 +66,6 @@ event SetManagement:
 PRECISION: constant(uint256) = 10**18
 BPS_PRECISION: constant(uint256) = 10000
 PERIOD_LENGTH: constant(uint256) = 6 * 14 * 24 * 60 * 60
-MAX_NUM_TEAMS: constant(uint256) = 128
-TEAM_SENTINEL: constant(address) = 0x1111111111111111111111111111111111111111
 
 @deploy
 def __init__(_genesis: uint256, _token: address):
