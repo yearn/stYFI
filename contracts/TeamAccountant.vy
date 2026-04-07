@@ -79,6 +79,20 @@ def global_profits(_period: uint256) -> uint256:
 
 @external
 @view
+def global_losses(_period: uint256) -> uint256:
+    """
+    @notice Query the global losses for a specific budget period
+    @param _period Budget period number
+    @return Global losses in this specific period
+    """
+    revenue: uint256 = self.global_revenues[_period]
+    cost: uint256 = self.global_costs[_period]
+    if revenue >= cost:
+        return 0
+    return cost - revenue
+
+@external
+@view
 def lifetime_global_profits() -> uint256:
     """
     @notice Query the lifetime global profits
@@ -89,6 +103,19 @@ def lifetime_global_profits() -> uint256:
     if cost >= revenue:
         return 0
     return revenue - cost
+
+@external
+@view
+def lifetime_global_losses() -> uint256:
+    """
+    @notice Query the lifetime global losses
+    @return Global losses
+    """
+    revenue: uint256 = self.lifetime_global_revenues
+    cost: uint256 = self.lifetime_global_costs
+    if revenue >= cost:
+        return 0
+    return cost - revenue
 
 @external
 @view
@@ -107,6 +134,21 @@ def team_profits(_team: address, _period: uint256) -> uint256:
 
 @external
 @view
+def team_losses(_team: address, _period: uint256) -> uint256:
+    """
+    @notice Query the losses of a team for a specific budget period
+    @param _team Team address
+    @param _period Budget period number
+    @return Lossses in this specific period by this specific team
+    """
+    revenue: uint256 = self.team_revenues[_team][_period]
+    cost: uint256 = self.team_costs[_team][_period]
+    if revenue >= cost:
+        return 0
+    return cost - revenue
+
+@external
+@view
 def lifetime_team_profits(_team: address) -> uint256:
     """
     @notice Query the lifetime profits of a team
@@ -118,6 +160,20 @@ def lifetime_team_profits(_team: address) -> uint256:
     if cost >= revenue:
         return 0
     return revenue - cost
+
+@external
+@view
+def lifetime_team_losses(_team: address) -> uint256:
+    """
+    @notice Query the lifetime losses of a team
+    @param _team Team address
+    @return Lifetime losses by this specific team
+    """
+    revenue: uint256 = self.lifetime_team_revenues[_team]
+    cost: uint256 = self.lifetime_team_costs[_team]
+    if revenue >= cost:
+        return 0
+    return cost - revenue
 
 @external
 def adjust_revenue(_team: address, _period: uint256, _amount: uint256, _increment: bool):

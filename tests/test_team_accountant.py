@@ -97,6 +97,24 @@ def test_profit(deployer, alice, bob, accountant):
     assert accountant.team_profits(alice, 0) == 2 * UNIT
     assert accountant.global_profits(0) == 0
 
+def test_loss(deployer, alice, bob, accountant):
+    # adding revenue increases loss
+    assert accountant.team_losses(alice, 0) == 0
+    assert accountant.global_losses(0) == 0
+    accountant.adjust_cost(alice, 0, 3 * UNIT, INCREMENT, sender=deployer)
+    assert accountant.team_losses(alice, 0) == 3 * UNIT
+    assert accountant.global_losses(0) == 3 * UNIT
+
+    # adding revneue decreases loss
+    accountant.adjust_revenue(alice, 0, UNIT, INCREMENT, sender=deployer)
+    assert accountant.team_losses(alice, 0) == 2 * UNIT
+    assert accountant.global_losses(0) == 2 * UNIT
+
+    # adding revenue of another team affects global losses
+    accountant.adjust_revenue(bob, 0, 3 * UNIT, INCREMENT, sender=deployer)
+    assert accountant.team_losses(alice, 0) == 2 * UNIT
+    assert accountant.global_losses(0) == 0
+
 def test_set_operator(deployer, alice, accountant):
     assert not accountant.operators(alice)
     accountant.set_operator(alice, True, sender=deployer)
