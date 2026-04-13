@@ -57,6 +57,22 @@ def test_finalize_first(chain, deployer, alice, bob, accountant, chainlink, dist
     with reverts():
         distributor.finalize_period(sender=deployer)
 
+def test_finalize_zero(chain, deployer, alice, bob, accountant, chainlink, distributor):
+    # we should still be able to finalize epochs if there is no EMA smoothing and there hasnt been any revenue
+    distributor.set_bonus_factor(5000, sender=deployer)
+    distributor.set_ybc(bob, 1000, sender=deployer)
+
+    ts = chain.pending_timestamp + PERIOD_LENGTH
+    chain.pending_timestamp = ts
+    chainlink.set_data(0, 2 * 10**8, ts, ts, 0, sender=deployer)
+    distributor.finalize_period(sender=deployer)
+
+    accountant.adjust_revenue(alice, 1, UNIT, True, sender=deployer)
+    ts += PERIOD_LENGTH
+    chainlink.set_data(1, 2 * 10**8, ts, ts, 0, sender=deployer)
+    chain.pending_timestamp = ts
+    assert distributor.finalize_period(sender=deployer).return_value[2] == 2 * UNIT
+
 def test_ema_revenue(chain, deployer, alice, accountant, chainlink, distributor):
     distributor.set_smoothing_factor(UNIT // 4, sender=deployer)
 

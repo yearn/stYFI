@@ -138,6 +138,10 @@ def finalize_period() -> (uint256, uint256, uint256):
         ema_revenue = (smoothing_factor * global_revenue + (PRECISION - smoothing_factor) * prev_ema_revenue) // PRECISION
     self.ema_revenue = ema_revenue
 
+    if prev_ema_revenue == 0:
+        # prevent division by zero - the cap will keep the growth factor in check
+        prev_ema_revenue = 1
+
     # compute global growth and cap in either direction
     growth_rate_cap: uint256 = self.growth_rate_cap * PRECISION // BPS_PRECISION
     growth_factor: uint256 = ema_revenue * PRECISION // prev_ema_revenue
