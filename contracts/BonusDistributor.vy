@@ -57,6 +57,28 @@ event ClaimBonus:
     ybc_amount: uint256
     recipient: address
 
+event SetOperator:
+    operator: indexed(address)
+
+event SetAccountant:
+    accountant: indexed(address)
+
+event SetBonusPriceOracle:
+    oracle: indexed(address)
+
+event SetYBC:
+    recipient: indexed(address)
+    split: uint256
+
+event SetSmoothingFactor:
+    factor: uint256
+
+event SetGrowthRateCap:
+    cap: uint256
+
+event SetBonusFactor:
+    factor: uint256
+
 event PendingManagement:
     management: indexed(address)
 
@@ -197,7 +219,9 @@ def set_operator(_operator: address):
     @dev Can only be called by management
     """
     assert msg.sender == self.management
+
     self.operator = _operator
+    log SetOperator(operator=_operator)
 
 @external
 def set_accountant(_accountant: address):
@@ -207,7 +231,9 @@ def set_accountant(_accountant: address):
     @dev Can only be called by management
     """
     assert msg.sender == self.management
+
     self.accountant = IAccountant(_accountant)
+    log SetAccountant(accountant=_accountant)
 
 @external
 def set_bonus_price_oracle(_oracle: address):
@@ -218,7 +244,9 @@ def set_bonus_price_oracle(_oracle: address):
     @dev Can only be called by management
     """
     assert msg.sender == self.management
+
     self.bonus_price_oracle = IBonusPriceOracle(_oracle)
+    log SetBonusPriceOracle(oracle=_oracle)
 
 @external
 def set_ybc(_recipient: address, _split: uint256):
@@ -231,8 +259,10 @@ def set_ybc(_recipient: address, _split: uint256):
     assert msg.sender == self.management
     assert _recipient != empty(address)
     assert _split <= BPS_PRECISION
+
     self.ybc_recipient = IYBCRecipient(_recipient)
     self.ybc_split = _split
+    log SetYBC(recipient=_recipient, split=_split)
 
 @external
 def set_smoothing_factor(_factor: uint256):
@@ -243,7 +273,9 @@ def set_smoothing_factor(_factor: uint256):
     """
     assert msg.sender == self.management
     assert _factor <= PRECISION
+
     self.smoothing_factor = _factor
+    log SetSmoothingFactor(factor=_factor)
 
 @external
 def set_growth_rate_cap(_cap: uint256):
@@ -254,7 +286,9 @@ def set_growth_rate_cap(_cap: uint256):
     """
     assert msg.sender == self.management
     assert _cap <= BPS_PRECISION * 4 // 5
+
     self.growth_rate_cap = _cap
+    log SetGrowthRateCap(cap=_cap)
 
 @external
 def set_bonus_factor(_factor: uint256):
@@ -265,7 +299,9 @@ def set_bonus_factor(_factor: uint256):
     """
     assert msg.sender == self.management
     assert _factor <= 2 * BPS_PRECISION
+
     self.bonus_factor = _factor
+    log SetBonusFactor(factor=_factor)
 
 @external
 def set_management(_management: address):
