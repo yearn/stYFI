@@ -57,31 +57,51 @@ flowchart TD
     B[StakingRewardDistributor]
     D[VotingEscrowRewardDistributor]
     C[LiquidLockerRewardDistributor]
-    
-    E[stYFI] -->|"on state change"| B
-    G[stYFI+] --> E
-    F[stLL] --> |"on state change"| C
-    
+
+    E[stYFI] -->|"on state change"| J
+    G[stYFIx] --> E
+    F["llYFI (x3)"] --> |"on state change"| K
+
     G --> |"on state change"| H[DelegatedStakingRewardDistributor]
     H --> |"claim"| B
-    
+
     Y[Yearn] --> |"deposit rewards"|A
-    
+
     B --> |"claim"| A
     D --> |"claim"| A
     C --> |"claim"| A
-    
+
     I["RewardClaimer"]
     I --> |"claim"| B
     I --> |"claim"| D
     I --> |"claim"| C
     I --> |"claim"| H
+    I --> |"claim"| N
     U --> |"claim rewards"| I
-    
+
     U --> |"stake"| E
     U --> |"stake"| G
     U --> |"stake"| F
-    
+
+    J[stYFI middleware]
+    J --> B
+    J --> L
+
+    K["llYFI middleware (x3)"]
+    K --> C
+    K --> L
+
+    L[WeightAggregator]
+    M[YBCWeightAggregator]
+    L --> |"iff YBC member"| M
+
+    N[YBCRewards]
+    M --> |sync| N
+    N --> |claim| P
+
+    P[YBC]
+    O[YBCElection]
+    O --> |"on election"| P
 ```
 
 ## Usage
