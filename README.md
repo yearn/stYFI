@@ -155,7 +155,7 @@ flowchart TD
     D[FundingDistributor]
     E[TeamAccountant]
     F([ychad/gov])
-    G[bonus distributor]
+    G[BonusDistributor]
 
     O ==> A
     A --> |deposit revenue| C
