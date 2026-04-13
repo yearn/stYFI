@@ -81,7 +81,7 @@ def claimer(project, deployer, reward, srd, llrd):
 
 @fixture
 def ybc_rewards(project, deployer, genesis, reward, ybc, ybc_aggregator, claimer):
-    rewards = project.YBCRewards.deploy(genesis, ybc, reward, sender=deployer)
+    rewards = project.YBCRewardDistributor.deploy(genesis, ybc, reward, sender=deployer)
     rewards.set_weight_aggregator(ybc_aggregator, sender=deployer)
     rewards.set_upstream_weights(ybc_aggregator, sender=deployer)
     rewards.set_claim_from(claimer, sender=deployer)

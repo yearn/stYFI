@@ -2,7 +2,7 @@
 # pragma optimize gas
 # pragma evm-version cancun
 """
-@title YBC Rewards
+@title YBC Reward Distributor
 @author Yearn Finance
 @license GNU AGPLv3
 @notice YBC module that deals with distributing rewards originating from the Collective's staking position(s).
