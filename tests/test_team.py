@@ -45,7 +45,11 @@ def recipient(project, deployer, genesis, accountant, token, vault, oracle):
     return recipient
 
 @fixture
-def registry(chain, project, deployer, genesis, distributor, recipient):
+def implementation(project, deployer):
+    return project.Team.deploy(sender=deployer)
+
+@fixture
+def registry(chain, project, deployer, genesis, distributor, recipient, implementation):
     chain.pending_timestamp = genesis
     registry = project.TeamRegistry.deploy(genesis, sender=deployer)
 
@@ -55,30 +59,20 @@ def registry(chain, project, deployer, genesis, distributor, recipient):
     registry.set_revenue_recipient(recipient, sender=deployer)
     recipient.set_registry(registry, sender=deployer)
 
+    registry.set_implementation(implementation, sender=deployer)
+
     return registry
 
 @fixture
-def implementation(project, deployer):
-    return project.Team.deploy(sender=deployer)
+def team(project, deployer, alice, registry):
+    return project.Team.at(registry.add_team("A", alice, sender=deployer).return_value[1])
 
-@fixture
-def factory(project, deployer, registry, implementation):
-    factory = project.TeamFactory.deploy(registry, implementation, sender=deployer)
-    registry.set_factory(factory, sender=deployer)
-    return factory
-
-@fixture
-def team(project, deployer, alice, factory, registry):
-    team = project.Team.at(factory.deploy("A", sender=alice).return_value)
-    registry.add_team(team, sender=deployer)
-    return team
-
-def test_setup(deployer, registry, implementation, team):
+def test_setup(deployer, implementation, team):
     with reverts():
-        implementation.setup("A", registry, deployer, sender=deployer)
+        implementation.setup("A", deployer, sender=deployer)
 
     with reverts():
-        team.setup("A", registry, deployer, sender=deployer)
+        team.setup("A", deployer, sender=deployer)
 
 def test_deposit_revenue(alice, accountant, token, vault, recipient, team):
     token.mint(alice, 6 * SMALL_UNIT, sender=alice)

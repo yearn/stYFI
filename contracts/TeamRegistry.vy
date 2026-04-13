@@ -17,22 +17,19 @@ interface IRegistry:
     def num_teams() -> uint256: view
     def teams(_idx: uint256) -> address: view
     def is_team(_team: address) -> bool: view
-    def factory() -> address: view
     def revenue_recipient() -> address: view
     def funding_distributor() -> address: view
 implements: IRegistry
 
-interface IFactory:
-    def deployed(_team: address) -> bool: view
-
 interface ITeam:
+    def setup(_name: String[100], _owner: address): nonpayable
     def migrate(_registry: address): nonpayable
 
 genesis: public(immutable(uint256))
 management: public(address)
 pending_management: public(address)
 successor: public(address)
-factory: public(IFactory)
+implementation: public(address)
 revenue_recipient: public(address)
 funding_distributor: public(address)
 
@@ -54,8 +51,8 @@ event Deprecate:
 event MigrateTeam:
     team: indexed(address)
 
-event SetFactory:
-    factory: indexed(address)
+event SetImplementation:
+    implementation: indexed(address)
 
 event SetRevenueRecipient:
     recipient: indexed(address)
@@ -101,25 +98,27 @@ def is_team(_team: address) -> bool:
     return self.team_retirements[_team] > self._period()
 
 @external
-def add_team(_team: address) -> uint256:
+def add_team(_name: String[100], _owner: address) -> (uint256, address):
     """
-    @notice Add a team to the registry
-    @param _team Team adress
-    @return Team index
+    @notice Deploy a team and add it to the registry
+    @param _name Team name. Must be unique
+    @param _owner Team owner address
+    @return Tuple of team index and team contract address
     @dev Can only be called by management
-    @dev Only teams that are deployed from the factory can be added
     """
     assert msg.sender == self.management
-    assert self.team_retirements[_team] == 0
-    assert staticcall self.factory.deployed(_team)
+    assert len(_name) > 0
+    team: address = create_minimal_proxy_to(self.implementation, salt=keccak256(_name))
+    assert self.team_retirements[team] == 0
+    extcall ITeam(team).setup(_name, _owner)
 
     idx: uint256 = self.num_teams
     self.num_teams = idx + 1
-    self.teams[idx] = _team
-    self.team_retirements[_team] = max_value(uint256)
+    self.teams[idx] = team
+    self.team_retirements[team] = max_value(uint256)
 
-    log AddTeam(idx=idx, team=_team)
-    return idx
+    log AddTeam(idx=idx, team=team)
+    return (idx, team)
 
 @external
 def retire_team(_team: address):
@@ -180,16 +179,16 @@ def sweep(_token: address, _amount: uint256 = max_value(uint256)):
     assert extcall IERC20(_token).transfer(msg.sender, amount, default_return_value=True)
 
 @external
-def set_factory(_factory: address):
+def set_implementation(_implementation: address):
     """
-    @notice Set the team factory
-    @param _factory Factory address
+    @notice Set the team implementation contract. Only affects new deployments
+    @param _implementation Team implementation address
     @dev Can only be called by management
     """
     assert msg.sender == self.management
 
-    self.factory = IFactory(_factory)
-    log SetFactory(factory=_factory)
+    self.implementation = _implementation
+    log SetImplementation(implementation=_implementation)
 
 @external
 def set_revenue_recipient(_recipient: address):

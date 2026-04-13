@@ -154,9 +154,10 @@ def test_growth_rate_cap_down(chain, deployer, alice, accountant, chainlink, dis
 
 def test_claim(chain, project, deployer, alice, bob, charlie, token, accountant, chainlink, distributor):
     impl = project.Team.deploy(sender=deployer)
-    factory = project.TeamFactory.deploy(ZERO_ADDRESS, impl, sender=deployer)
-    team_a = factory.deploy("A", sender=alice).return_value
-    team_b = factory.deploy("B", sender=bob).return_value
+    registry = project.TeamRegistry.deploy(0, sender=deployer)
+    registry.set_implementation(impl, sender=deployer)
+    team_a = registry.add_team("A", alice, sender=deployer).return_value[1]
+    team_b = registry.add_team("B", bob, sender=deployer).return_value[1]
 
     distributor.set_bonus_factor(5000, sender=deployer)
     accountant.adjust_revenue(team_a, 0, 20 * UNIT, True, sender=deployer)
@@ -202,8 +203,9 @@ def test_claim(chain, project, deployer, alice, bob, charlie, token, accountant,
 
 def test_claim_ybc(chain, project, deployer, alice, bob, token, accountant, chainlink, distributor):
     impl = project.Team.deploy(sender=deployer)
-    factory = project.TeamFactory.deploy(ZERO_ADDRESS, impl, sender=deployer)
-    team = factory.deploy("A", sender=alice).return_value
+    registry = project.TeamRegistry.deploy(0, sender=deployer)
+    registry.set_implementation(impl, sender=deployer)
+    team = registry.add_team("A", alice, sender=deployer).return_value[1]
 
     vault = project.MockVault.deploy(token, sender=deployer)
     ybc = project.YBCBonusRecipient.deploy(vault, bob, sender=deployer)

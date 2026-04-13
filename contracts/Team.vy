@@ -5,7 +5,7 @@
 @title Team
 @author Yearn Finance
 @license GNU AGPLv3
-@notice Implementation contract for proxies deployed by the Team factory. Used to deposit
+@notice Implementation contract for proxies deployed by the team registry. Used to deposit
         revenue and claim funding by the owner.
 """
 
@@ -74,16 +74,15 @@ def __init__():
     self.registry = IRegistry(0x1111111111111111111111111111111111111111)
 
 @external
-def setup(_name: String[100], _registry: address, _owner: address):
+def setup(_name: String[100], _owner: address):
     """
     @notice Set up team parameters
     @param _name Team name
-    @param _registry Registry address
     @param _owner Owner address
     """
     assert self.registry.address == empty(address)
     self.name = _name
-    self.registry = IRegistry(_registry)
+    self.registry = IRegistry(msg.sender)
     self.owner = _owner
 
 @external

@@ -8,13 +8,18 @@ ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 PERIOD_LENGTH = 6 * 14 * 24 * 60 * 60
 
 @fixture
-def registry(chain, project, deployer, alice, genesis):
+def registry(chain, project, deployer, genesis):
     chain.pending_timestamp = genesis
+    impl = project.Team.deploy(sender=deployer)
     registry = project.TeamRegistry.deploy(genesis, sender=deployer)
-    factory = project.MockFactory.deploy(sender=deployer)
-    factory.set_deployed(alice, True, sender=deployer)
-    registry.set_factory(factory, sender=deployer)
+    registry.set_implementation(impl, sender=deployer)
     return registry
+
+@fixture
+def team(networks, accounts, deployer, alice, registry):
+    team = registry.add_team("A", alice, sender=deployer).return_value[1]
+    networks.active_provider.set_balance(team, UNIT)
+    return accounts[team]
 
 @fixture
 def accountant(project, deployer):
@@ -36,46 +41,45 @@ def token(project, deployer):
 def oracle(project, deployer):
     return project.MockOracle.deploy(sender=deployer)
 
-def test_approve(deployer, alice, distributor, token):
+def test_approve(deployer, distributor, token, team):
     assert distributor.num_approvals() == 0
     assert distributor.approvals(0) == (ZERO_ADDRESS, 0, ZERO_ADDRESS, 0, 0, 0)
-    distributor.approve(alice, 1, token, UNIT, 1000, sender=deployer)
+    distributor.approve(team, 1, token, UNIT, 1000, sender=deployer)
     assert distributor.num_approvals() == 1
-    assert distributor.approvals(0) == (alice, 1, token, UNIT, 1000, 0)
+    assert distributor.approvals(0) == (team, 1, token, UNIT, 1000, 0)
 
-def test_claim_immediate(deployer, alice, bob, registry, accountant, distributor, token, oracle):
-    registry.add_team(alice, sender=deployer)
+def test_claim_immediate(deployer, bob, accountant, distributor, token, oracle, team):
     token.mint(distributor, 4 * UNIT, sender=deployer)
-    distributor.approve(alice, 0, token, 4 * UNIT, 0, sender=deployer)
+    distributor.approve(team, 0, token, 4 * UNIT, 0, sender=deployer)
     oracle.set_price(token, 2 * UNIT, sender=deployer)
     distributor.set_price_oracle(token, oracle, sender=deployer)
 
     # claim
     assert distributor.claimable(0) == 4 * UNIT
-    assert distributor.costs(alice, 0, token) == (0, 0)
-    assert accountant.team_costs(alice, 0) == 0
+    assert distributor.costs(team, 0, token) == (0, 0)
+    assert accountant.team_costs(team, 0) == 0
     assert accountant.global_costs(0) == 0
     assert token.balanceOf(distributor) == 4 * UNIT
     assert token.balanceOf(bob) == 0
-    assert distributor.claim(0, UNIT, bob, sender=alice).return_value == (0, 2 * UNIT, ZERO_ADDRESS)
+    assert distributor.claim(0, UNIT, bob, sender=team).return_value == (0, 2 * UNIT, ZERO_ADDRESS)
     assert distributor.claimable(0) == 3 * UNIT
-    assert distributor.approvals(0) == (alice, 0, token, 4 * UNIT, 0, UNIT)
-    assert distributor.costs(alice, 0, token) == (UNIT, 2 * UNIT)
-    assert accountant.team_costs(alice, 0) == 2 * UNIT
+    assert distributor.approvals(0) == (team, 0, token, 4 * UNIT, 0, UNIT)
+    assert distributor.costs(team, 0, token) == (UNIT, 2 * UNIT)
+    assert accountant.team_costs(team, 0) == 2 * UNIT
     assert accountant.global_costs(0) == 2 * UNIT
     assert token.balanceOf(distributor) == 3 * UNIT
     assert token.balanceOf(bob) == UNIT
 
     # change price, claim again from the same approval
     oracle.set_price(token, 5 * UNIT, sender=deployer)
-    assert distributor.claim(0, 2 * UNIT, alice, sender=alice).return_value == (0, 10 * UNIT, ZERO_ADDRESS)
+    assert distributor.claim(0, 2 * UNIT, team, sender=team).return_value == (0, 10 * UNIT, ZERO_ADDRESS)
     assert distributor.claimable(0) == UNIT
-    assert distributor.approvals(0) == (alice, 0, token, 4 * UNIT, 0, 3 * UNIT)
-    assert distributor.costs(alice, 0, token) == (3 * UNIT, 4 * UNIT)
-    assert accountant.team_costs(alice, 0) == 12 * UNIT
+    assert distributor.approvals(0) == (team, 0, token, 4 * UNIT, 0, 3 * UNIT)
+    assert distributor.costs(team, 0, token) == (3 * UNIT, 4 * UNIT)
+    assert accountant.team_costs(team, 0) == 12 * UNIT
     assert accountant.global_costs(0) == 12 * UNIT
     assert token.balanceOf(distributor) == UNIT
-    assert token.balanceOf(alice) == 2 * UNIT
+    assert token.balanceOf(team) == 2 * UNIT
 
 # # the following test can only be ran with `--network ethereum:mainnet-fork` flag:
 # def test_claim_stream(chain, project, deployer, alice, bob, genesis, registry, accountant, distributor, token, oracle):
@@ -104,76 +108,71 @@ def test_claim_immediate(deployer, alice, bob, registry, accountant, distributor
 #     vest.claim(sender=bob)
 #     assert token.balanceOf(bob) == UNIT
 
-def test_claim_permission(deployer, alice, bob, registry, distributor, token, oracle):
-    registry.add_team(alice, sender=deployer)
+def test_claim_permission(deployer, bob, distributor, token, oracle, team):
     token.mint(distributor, UNIT, sender=deployer)
-    distributor.approve(alice, 0, token, UNIT, 0, sender=deployer)
+    distributor.approve(team, 0, token, UNIT, 0, sender=deployer)
     oracle.set_price(token, UNIT, sender=deployer)
     distributor.set_price_oracle(token, oracle, sender=deployer)
 
     with reverts():
         distributor.claim(0, UNIT, bob, sender=bob)
-    distributor.claim(0, UNIT, bob, sender=alice)
+    distributor.claim(0, UNIT, bob, sender=team)
 
-def test_claim_early(chain, deployer, alice, registry, distributor, token, oracle):
-    registry.add_team(alice, sender=deployer)
+def test_claim_early(chain, deployer, distributor, token, oracle, team):
     token.mint(distributor, UNIT, sender=deployer)
-    distributor.approve(alice, 1, token, UNIT, 0, sender=deployer)
+    distributor.approve(team, 1, token, UNIT, 0, sender=deployer)
     oracle.set_price(token, UNIT, sender=deployer)
     distributor.set_price_oracle(token, oracle, sender=deployer)
 
     with reverts():
-        distributor.claim(0, UNIT, alice, sender=alice)
+        distributor.claim(0, UNIT, team, sender=team)
 
     chain.pending_timestamp += PERIOD_LENGTH
-    distributor.claim(0, UNIT, alice, sender=alice)
+    distributor.claim(0, UNIT, team, sender=team)
 
-def test_claim_late(chain, deployer, alice, registry, distributor, token, oracle):
-    registry.add_team(alice, sender=deployer)
+def test_claim_late(chain, deployer, distributor, token, oracle, team):
     token.mint(distributor, UNIT, sender=deployer)
-    distributor.approve(alice, 0, token, UNIT, 0, sender=deployer)
+    distributor.approve(team, 0, token, UNIT, 0, sender=deployer)
     oracle.set_price(token, UNIT, sender=deployer)
     distributor.set_price_oracle(token, oracle, sender=deployer)
 
     chain.pending_timestamp += PERIOD_LENGTH
     with reverts():
-        distributor.claim(0, UNIT, alice, sender=alice)
+        distributor.claim(0, UNIT, team, sender=team)
 
-def test_claim_excessive(deployer, alice, registry, distributor, token, oracle):
-    registry.add_team(alice, sender=deployer)
+def test_claim_excessive(deployer, distributor, token, oracle, team):
     token.mint(distributor, 3 * UNIT, sender=deployer)
-    distributor.approve(alice, 0, token, 2 * UNIT, 0, sender=deployer)
+    distributor.approve(team, 0, token, 2 * UNIT, 0, sender=deployer)
     oracle.set_price(token, UNIT, sender=deployer)
     distributor.set_price_oracle(token, oracle, sender=deployer)
 
     with reverts():
-        distributor.claim(0, 3 * UNIT, alice, sender=alice)
-    distributor.claim(0, UNIT, alice, sender=alice)
+        distributor.claim(0, 3 * UNIT, team, sender=team)
+    distributor.claim(0, UNIT, team, sender=team)
     with reverts():
-        distributor.claim(0, 2 * UNIT, alice, sender=alice)
-    distributor.claim(0, UNIT, alice, sender=alice)
+        distributor.claim(0, 2 * UNIT, team, sender=team)
+    distributor.claim(0, UNIT, team, sender=team)
     with reverts():
-        distributor.claim(0, UNIT, alice, sender=alice)
+        distributor.claim(0, UNIT, team, sender=team)
 
-def test_refund(deployer, alice, registry, accountant, distributor, token, oracle):
-    registry.add_team(alice, sender=deployer)
+def test_refund(deployer, accountant, distributor, token, oracle, team):
     token.mint(distributor, 4 * UNIT, sender=deployer)
-    distributor.approve(alice, 0, token, 4 * UNIT, 0, sender=deployer)
+    distributor.approve(team, 0, token, 4 * UNIT, 0, sender=deployer)
     oracle.set_price(token, 2 * UNIT, sender=deployer)
     distributor.set_price_oracle(token, oracle, sender=deployer)
 
-    distributor.claim(0, UNIT, alice, sender=alice)
+    distributor.claim(0, UNIT, team, sender=team)
     oracle.set_price(token, 5 * UNIT, sender=deployer)
-    distributor.claim(0, 2 * UNIT, alice, sender=alice)
-    assert distributor.costs(alice, 0, token) == (3 * UNIT, 4 * UNIT)
-    assert accountant.team_costs(alice, 0) == 12 * UNIT
+    distributor.claim(0, 2 * UNIT, team, sender=team)
+    assert distributor.costs(team, 0, token) == (3 * UNIT, 4 * UNIT)
+    assert accountant.team_costs(team, 0) == 12 * UNIT
     assert accountant.global_costs(0) == 12 * UNIT
 
     # refund reduces costs at the average price
-    token.approve(distributor, UNIT, sender=alice)
-    assert distributor.refund(0, UNIT, sender=alice).return_value == (0, 4 * UNIT)
-    assert distributor.costs(alice, 0, token) == (2 * UNIT, 4 * UNIT)
-    assert accountant.team_costs(alice, 0) == 8 * UNIT
+    token.approve(distributor, UNIT, sender=team)
+    assert distributor.refund(0, UNIT, sender=team).return_value == (0, 4 * UNIT)
+    assert distributor.costs(team, 0, token) == (2 * UNIT, 4 * UNIT)
+    assert accountant.team_costs(team, 0) == 8 * UNIT
     assert accountant.global_costs(0) == 8 * UNIT
 
 def test_sweep(project, deployer, distributor):

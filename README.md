@@ -86,13 +86,10 @@ flowchart TD
 
 ## Teams
 
-### Team Factory
-The **TeamFactory** is a permissionless contract for deploying minimal proxies pointing to a Team implementation contract. Deployment of a team only requires setting a name and owner address. A deployed Team on its own does not have much functionality, it needs to be added to the TeamRegistry before it can claim funding and submit revenue.
-
 ### Team Registry
 The **TeamRegistry** tracks the official list of currently active teams. It also points to the current implementation of the RevenueRecipient and FundingDistributor to be used by the teams for depositing revenue and claiming funding respectively.
 
-Teams can be added to the registry. Once added, they can be permanently marked as retired. A team that is marked as retired in epoch `N` will no longer be able to claim funding or deposit revenue in epoch `N+1` and onwards.
+Teams can be added to the registry by specifying a unique name and the team owner. This deploys a minimal proxy to the current Team contract implementation and adds it to the registry. Once added, teams can be permanently marked as retired. A team that is marked as retired in epoch `N` will no longer be able to claim funding or deposit revenue in epoch `N+1` and onwards.
 
 Teams operate on so-called budget periods. Each budget period lasts 6 stYFI epochs (12 weeks), with the budget genesis 12 weeks before the stYFI genesis (Feb 05, 2026).
 
