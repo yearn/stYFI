@@ -38,6 +38,8 @@ interface IAuction:
     def kick(_token: address): nonpayable
 
 genesis: public(immutable(uint256))
+token: public(immutable(IERC20))
+token_split: public(immutable(uint256[3])) # stYFI, treasury, yETH
 management: public(address)
 pending_management: public(address)
 operator: public(address)
@@ -48,6 +50,10 @@ reward_distributor: public(IRewardDistributor)
 recovery_auction: public(IAuction)
 oracles: public(HashMap[address, address])
 converters: public(HashMap[address, address])
+
+last_balance: public(uint256)
+sum_balance: public(uint256)
+used: public(uint256[3])
 
 event DepositRevenue:
     team: indexed(address)
@@ -62,16 +68,13 @@ event ConvertToken:
     amount: uint256
 
 event ToTreasury:
-    token: indexed(address)
     amount: uint256
 
 event ToRewards:
     epoch: indexed(uint256)
-    token: indexed(address)
     amount: uint256
 
 event ToRecovery:
-    token: indexed(address)
     amount: uint256
 
 event SetOperator:
@@ -107,16 +110,24 @@ event SetManagement:
     management: indexed(address)
 
 PRECISION: constant(uint256) = 10**18
+BPS_PRECISION: constant(uint256) = 10000
 PERIOD_LENGTH: constant(uint256) = 6 * 14 * 24 * 60 * 60
 INCREMENT: constant(bool) = True
 
 @deploy
-def __init__(_genesis: uint256):
+def __init__(_genesis: uint256, _token: address, _split: uint256[3]):
     """
     @notice Constructor
     @param _genesis Budget period genesis timestamp
+    @param _token Main revenue token
+    @param _split Token split between stYFI, treasury and yETH (in that order, bps)
     """
+    assert _split[0] + _split[1] + _split[2] == BPS_PRECISION
+
     genesis = _genesis
+    token = IERC20(_token)
+    token_split = _split
+
     self.management = msg.sender
     self.operator = msg.sender
     self.treasury = msg.sender
@@ -177,19 +188,6 @@ def convert(_token: address, _amount: uint256):
     log ConvertToken(token=_token, converter=converter, amount=_amount)
 
 @external
-def to_treasury(_token: address, _amount: uint256):
-    """
-    @notice Send a token to treasury
-    @param _token Token address
-    @param _amount Token amount
-    @dev Can only be called by the operator
-    """
-    assert msg.sender == self.operator
-
-    assert extcall IERC20(_token).transfer(self.treasury, _amount, default_return_value=True)
-    log ToTreasury(token=_token, amount=_amount)
-
-@external
 def to_styfi_rewards(_epoch: uint256, _amount: uint256):
     """
     @notice Queue the rewards token for future distribution to stYFI
@@ -199,29 +197,44 @@ def to_styfi_rewards(_epoch: uint256, _amount: uint256):
     """
     assert msg.sender == self.operator
 
+    self._use_balance(0, _amount)
     distributor: IRewardDistributor = self.reward_distributor
-    token: IERC20 = IERC20(staticcall distributor.token())
+    assert staticcall distributor.token() == token.address
     extcall token.approve(distributor.address, _amount)
     extcall distributor.deposit(_epoch, _amount)
-    log ToRewards(epoch=_epoch, token=token.address, amount=_amount)
+    log ToRewards(epoch=_epoch, amount=_amount)
 
 @external
-def to_yeth_recovery(_token: address, _amount: uint256):
+def to_treasury(_amount: uint256):
     """
-    @notice Auction a token for yETH recovery
-    @param _token Token address
+    @notice Send tokens to treasury
     @param _amount Token amount
     @dev Can only be called by the operator
     """
     assert msg.sender == self.operator
 
+    self._use_balance(1, _amount)
+    assert extcall token.transfer(self.treasury, _amount, default_return_value=True)
+    log ToTreasury(amount=_amount)
+
+@external
+def to_yeth_recovery(_amount: uint256):
+    """
+    @notice Auction token for yETH recovery
+    @param _amount Token amount
+    @dev Can only be called by the operator
+    """
+    assert msg.sender == self.operator
+
+    self._use_balance(2, _amount)
+
     # check token is enabled inside the auction
     auction: IAuction = self.recovery_auction
-    assert (staticcall auction.auctions(_token))[1] > 0
+    assert (staticcall auction.auctions(token.address))[1] > 0
 
-    assert extcall IERC20(_token).transfer(auction.address, _amount, default_return_value=True)
-    extcall auction.kick(_token)
-    log ToRecovery(token=_token, amount=_amount)
+    assert extcall token.transfer(auction.address, _amount, default_return_value=True)
+    extcall auction.kick(token.address)
+    log ToRecovery(amount=_amount)
 
 @external
 def sweep(_token: address, _amount: uint256 = max_value(uint256)):
@@ -236,6 +249,11 @@ def sweep(_token: address, _amount: uint256 = max_value(uint256)):
     amount: uint256 = _amount
     if _amount == max_value(uint256):
         amount = staticcall IERC20(_token).balanceOf(self)
+
+    if _token == token.address:
+        self._sync_balance()
+        self.last_balance -= amount
+        self.sum_balance -= amount
 
     assert extcall IERC20(_token).transfer(msg.sender, amount, default_return_value=True)
 
@@ -369,3 +387,21 @@ def accept_management():
 @view
 def _period() -> uint256:
     return unsafe_div(block.timestamp - genesis, PERIOD_LENGTH)
+
+@internal
+def _sync_balance():
+    current: uint256 = staticcall token.balanceOf(self)
+    increase: uint256 = current - self.last_balance
+    self.last_balance = current
+    self.sum_balance += increase
+
+@internal
+def _use_balance(_i: uint256, _amount: uint256):
+    self._sync_balance()
+
+    budget: uint256 = self.sum_balance * token_split[_i] // BPS_PRECISION
+    used: uint256 = self.used[_i] + _amount
+    assert used <= budget
+
+    self.last_balance -= _amount
+    self.used[_i] = used

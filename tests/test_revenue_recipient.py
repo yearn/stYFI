@@ -1,3 +1,4 @@
+from ape import reverts, Contract
 from pytest import fixture
 
 PERIOD_LENGTH = 6 * 14 * 24 * 60 * 60
@@ -34,8 +35,8 @@ def accountant(project, deployer):
     return project.TeamAccountant.deploy(sender=deployer)
 
 @fixture
-def recipient(project, deployer, genesis, registry, accountant):
-    recipient = project.RevenueRecipient.deploy(genesis, sender=deployer)
+def recipient(project, deployer, genesis, vault, registry, accountant):
+    recipient = project.RevenueRecipient.deploy(genesis, vault, [8000, 1000, 1000], sender=deployer)
     recipient.set_registry(registry, sender=deployer)
     recipient.set_accountant(accountant, sender=deployer)
     accountant.set_operator(recipient, True, sender=deployer)
@@ -101,3 +102,119 @@ def test_deposit_convert(project, deployer, token, vault, accountant, recipient,
     assert recipient.deposit(vault, 3 * SMALL_UNIT, sender=team).return_value == (0, 6 * UNIT)
     assert vault.balanceOf(recipient) == 4 * SMALL_UNIT
     assert accountant.global_revenues(period) == 8 * UNIT
+
+def test_to_styfi(chain, project, deployer, alice, genesis, token, vault, recipient):
+    distributor = project.RewardDistributor.deploy(genesis, vault, sender=deployer)
+    recipient.set_reward_distributor(distributor, sender=deployer)
+    recipient.set_operator(alice, sender=deployer)
+
+    token.mint(deployer, 12 * UNIT, sender=deployer)
+    token.approve(vault, 12 * UNIT, sender=deployer)
+    vault.deposit(10 * UNIT, recipient, sender=deployer)
+
+    assert recipient.last_balance() == 0
+    assert recipient.sum_balance() == 0
+    assert recipient.used(0) == 0
+    assert vault.balanceOf(distributor) == 0
+
+    # we can send 80% of all tokens to stYFI in one or multiple steps
+    with chain.isolate():
+        recipient.to_styfi_rewards(0, 8 * UNIT, sender=alice)
+        assert recipient.last_balance() == 2 * UNIT
+        assert recipient.sum_balance() == 10 * UNIT
+        assert recipient.used(0) == 8 * UNIT
+        assert vault.balanceOf(distributor) == 8 * UNIT
+
+    with chain.isolate():
+        recipient.to_styfi_rewards(0, 4 * UNIT, sender=alice)
+        assert recipient.last_balance() == 6 * UNIT
+        assert recipient.sum_balance() == 10 * UNIT
+        assert recipient.used(0) == 4 * UNIT
+        assert vault.balanceOf(distributor) == 4 * UNIT
+        recipient.to_styfi_rewards(1, 4 * UNIT, sender=alice)
+        assert recipient.last_balance() == 2 * UNIT
+        assert recipient.sum_balance() == 10 * UNIT
+        assert recipient.used(0) == 8 * UNIT
+        assert vault.balanceOf(distributor) == 8 * UNIT
+
+    # additional deposits are counted properly
+    with chain.isolate():
+        recipient.to_styfi_rewards(0, 4 * UNIT, sender=alice)
+        vault.deposit(2 * UNIT, recipient, sender=deployer)
+        recipient.to_styfi_rewards(1, 4 * UNIT, sender=alice)
+        assert recipient.last_balance() == 4 * UNIT
+        assert recipient.sum_balance() == 12 * UNIT
+        assert recipient.used(0) == 8 * UNIT
+        assert vault.balanceOf(distributor) == 8 * UNIT
+
+    # but we cant send 80% + 1
+    with reverts():
+        recipient.to_styfi_rewards(0, 8 * UNIT + 1, sender=alice)
+
+def test_to_treasury(chain, deployer, alice, bob, token, vault, recipient):
+    recipient.set_operator(alice, sender=deployer)
+    recipient.set_treasury(bob, sender=deployer)
+
+    token.mint(deployer, 20 * UNIT, sender=deployer)
+    token.approve(vault, 20 * UNIT, sender=deployer)
+    vault.deposit(20 * UNIT, recipient, sender=deployer)
+
+    assert recipient.last_balance() == 0
+    assert recipient.sum_balance() == 0
+    assert recipient.used(1) == 0
+    assert vault.balanceOf(bob) == 0
+
+    # we can send 10% of all tokens to treasury in one or multiple steps
+    with chain.isolate():
+        recipient.to_treasury(2 * UNIT, sender=alice)
+        assert recipient.last_balance() == 18 * UNIT
+        assert recipient.sum_balance() == 20 * UNIT
+        assert recipient.used(1) == 2 * UNIT
+        assert vault.balanceOf(bob) == 2 * UNIT
+
+    with chain.isolate():
+        recipient.to_treasury(UNIT, sender=alice)
+        assert recipient.last_balance() == 19 * UNIT
+        assert recipient.sum_balance() == 20 * UNIT
+        assert recipient.used(1) == UNIT
+        assert vault.balanceOf(bob) == UNIT
+        recipient.to_treasury(UNIT, sender=alice)
+        assert recipient.last_balance() == 18 * UNIT
+        assert recipient.sum_balance() == 20 * UNIT
+        assert recipient.used(1) == 2 * UNIT
+        assert vault.balanceOf(bob) == 2 * UNIT
+
+    # but we cant send 10% + 1
+    with reverts():
+        recipient.to_treasury(2 * UNIT + 1, sender=alice)
+
+# # the following tests can only be ran with `--network ethereum:mainnet-fork` flag:
+# def test_to_yeth(chain, project, deployer, alice, bob, token, vault, recipient):
+#     factory = Contract("0xbC587a495420aBB71Bbd40A0e291B64e80117526")
+#     auction = factory.createNewAuction("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", bob, sender=deployer).return_value
+#     auction = project.MockAuction.at(auction)
+#     auction.enable(vault, sender=deployer)
+
+#     recipient.set_operator(alice, sender=deployer)
+#     recipient.set_recovery_auction(auction, sender=deployer)
+
+#     token.mint(deployer, 20 * UNIT, sender=deployer)
+#     token.approve(vault, 20 * UNIT, sender=deployer)
+#     vault.deposit(20 * UNIT, recipient, sender=deployer)
+
+#     assert recipient.last_balance() == 0
+#     assert recipient.sum_balance() == 0
+#     assert recipient.used(1) == 0
+#     assert vault.balanceOf(bob) == 0
+
+#     # we can send 10% of all tokens to recovery
+#     with chain.isolate():
+#         recipient.to_yeth_recovery(2 * UNIT, sender=alice)
+#         assert recipient.last_balance() == 18 * UNIT
+#         assert recipient.sum_balance() == 20 * UNIT
+#         assert recipient.used(2) == 2 * UNIT
+#         assert vault.balanceOf(auction) == 2 * UNIT
+
+#     # but we cant send 10% + 1
+#     with reverts():
+#         recipient.to_yeth_recovery(2 * UNIT + 1, sender=alice)
