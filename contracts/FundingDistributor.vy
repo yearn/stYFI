@@ -163,6 +163,11 @@ def approve(_team: address, _period: uint256, _token: address, _amount: uint256,
     assert _token != empty(address)
     assert _amount > 0
 
+    oracle: address = self.oracles[_token]
+    assert oracle != empty(address)
+    price: uint256 = extcall IOracle(oracle).price(_token)
+    assert price > 0
+
     idx: uint256 = self.num_approvals
     self.num_approvals = idx + 1
     self.approvals[idx] = Approval(team=_team, period=_period, token=_token, amount=_amount, duration=_duration, used=0)
