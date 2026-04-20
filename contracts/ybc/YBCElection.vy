@@ -128,11 +128,12 @@ def status(_idx: uint256) -> Status:
     if self.proposals[_idx].retracted:
         return Status.RETRACTED
 
-    current_epoch: uint256 = self._epoch()
     voting_epoch: uint256 = self.proposals[_idx].epoch
-
-    if current_epoch < voting_epoch:
+    vote_open: uint256 = genesis + (voting_epoch + 1) * EPOCH_LENGTH - VOTE_LENGTH
+    if block.timestamp < vote_open:
         return Status.PROPOSED
+
+    current_epoch: uint256 = self._epoch()
     if current_epoch == voting_epoch:
         return Status.VOTING
 

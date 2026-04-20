@@ -123,7 +123,11 @@ def test_vote_yea(chain, alice, bob, charlie, genesis, election):
     assert election.proposals(0).votes == 0
     assert election.proposals(0).yea == 0
 
-    chain.pending_timestamp = genesis + 2 * EPOCH_LENGTH - 100
+    chain.pending_timestamp = genesis + EPOCH_LENGTH * 3 // 2 - 1
+    chain.mine()
+    assert election.status(0) == PROPOSED
+
+    chain.pending_timestamp = genesis + EPOCH_LENGTH * 3 // 2
     chain.mine()
     assert election.status(0) == VOTING
 
