@@ -103,6 +103,8 @@ def __init__(_genesis: uint256, _ybc: address):
     genesis = _genesis
     ybc = IYBC(_ybc)
     self.management = msg.sender
+    self.addition_threshold = THRESHOLD_PRECISION
+    self.expulsion_threshold = THRESHOLD_PRECISION
 
 @external
 @view
