@@ -32,7 +32,6 @@ interface IWeightAggregator:
 implements: IStakedHooks
 implements: IComponent
 
-genesis: public(immutable(uint256))
 ybc: public(immutable(IYBC))
 token: public(immutable(IERC20))
 management: public(address)
@@ -76,14 +75,12 @@ event SetManagement:
 PRECISION: constant(uint256) = 10**30
 
 @deploy
-def __init__(_genesis: uint256, _ybc: address, _token: address):
+def __init__(_ybc: address, _token: address):
     """
     @notice Constructor
-    @param _genesis Genesis timestamp
     @param _ybc YBC address
     @param _token Reward token address
     """
-    genesis = _genesis
     ybc = IYBC(_ybc)
     token = IERC20(_token)
     self.management = msg.sender
