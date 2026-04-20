@@ -329,6 +329,8 @@ def _vote(_idx: uint256, _yea: bool):
     self.votes[msg.sender][_idx // 256] = bitmap
 
     weight: uint256 = staticcall self.weight_aggregator.weight(msg.sender)
+    assert weight > 0
+
     self.proposals[_idx].votes += weight
     if _yea:
         self.proposals[_idx].yea += weight
