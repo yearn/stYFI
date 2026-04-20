@@ -211,6 +211,15 @@ def test_activate_stake(chain, deployer, alice, bob, yfi, styfi, genesis, srd, l
     chain.mine()
     assert aggregator.weight(alice) == 13 * UNIT + 2 * UNIT * 3 // 8
 
+    # stake and unstake in same epoch
+    yfi.mint(alice, UNIT, sender=deployer)
+    yfi.approve(styfi, UNIT, sender=alice)
+
+    chain.pending_timestamp += 1
+    styfi.deposit(UNIT, sender=alice)
+    styfi.unstake(2 * UNIT, sender=alice)
+    assert aggregator.weight(alice) > 0
+
 def test_activate_unstake(chain, deployer, alice, bob, yfi, styfi, genesis, srd, lls, ll_depositors, llrd, ybc_aggregator, aggregator, styfi_middleware, ll_middlewares):
     yfi.mint(alice, UNIT, sender=deployer)
     yfi.approve(styfi, UNIT, sender=alice)

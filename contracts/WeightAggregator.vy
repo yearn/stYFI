@@ -330,6 +330,7 @@ def _staked(_account: address, _weighted: bool) -> uint256:
     if not _weighted:
         return staked
 
+    epoch_start: uint256 = genesis + self._epoch() * EPOCH_LENGTH
     if epoch == self._epoch():
         # staked changed this epoch
         prev_time: uint256 = 0
@@ -341,9 +342,11 @@ def _staked(_account: address, _weighted: bool) -> uint256:
             time = prev_time
             staked = prev_staked
             ramping = prev_ramping
+        else:
+            time = min(time, epoch_start)
 
     # snapshot at beginning of the epoch
-    time = genesis + self._epoch() * EPOCH_LENGTH - time
+    time = epoch_start - time
     return staked - ramping + ramping * min(time, RAMP_LENGTH) // RAMP_LENGTH
 
 @internal
@@ -397,18 +400,20 @@ def _update_staked(_account: address, _prev: uint256, _amount: uint256, _increme
     """
     @notice Update the staked amount of an account. Returns previous staked amount
     """
+    packed: uint256 = self.packed_staked[_account]
     epoch: uint256 = 0
     time: uint256 = 0
     staked: uint256 = 0
     ramping: uint256 = 0
-    epoch, time, staked, ramping = self._unpack(self.packed_staked[_account])
+    epoch, time, staked, ramping = self._unpack(packed)
 
     if epoch == 0:
         # first update since activation, calculate from components
         epoch = 1
         time = 0
         staked = self._calculate_staked(_account, msg.sender, _prev)
-        self.packed_staked[_account] = self._pack(1, 0, staked, 0)
+        packed = self._pack(1, 0, staked, 0)
+        self.packed_staked[_account] = packed
     prev_staked: uint256 = staked
 
     if _increment == INCREMENT:
@@ -424,7 +429,7 @@ def _update_staked(_account: address, _prev: uint256, _amount: uint256, _increme
 
     current_epoch: uint256 = self._epoch()
     if current_epoch > epoch:
-        self.prev_packed_staked[_account] = self.packed_staked[_account]
+        self.prev_packed_staked[_account] = packed
     self.packed_staked[_account] = self._pack(current_epoch, time, staked, ramping)
 
     return prev_staked

@@ -2,7 +2,7 @@
 # pragma optimize gas
 # pragma evm-version cancun
 """
-@title YBC Weight aggregator
+@title YBC Weight Aggregator
 @author Yearn Finance
 @license GNU AGPLv3
 @notice Aggregates staked balances for YBC members only. This will allow for fair
@@ -337,6 +337,7 @@ def _staked(_account: address, _weighted: bool) -> uint256:
     if not _weighted:
         return staked
 
+    epoch_start: uint256 = genesis + self._epoch() * EPOCH_LENGTH
     if epoch == self._epoch():
         # staked changed this epoch
         prev_time: uint256 = 0
@@ -348,9 +349,11 @@ def _staked(_account: address, _weighted: bool) -> uint256:
             time = prev_time
             staked = prev_staked
             ramping = prev_ramping
+        else:
+            time = min(time, epoch_start)
 
     # snapshot at beginning of the epoch
-    time = genesis + self._epoch() * EPOCH_LENGTH - time
+    time = epoch_start - time
     return staked - ramping + ramping * min(time, RAMP_LENGTH) // RAMP_LENGTH
 
 @internal
@@ -407,7 +410,7 @@ def _update_staked(_account: address, _amount: uint256, _increment: bool) -> boo
 
     current_epoch: uint256 = self._epoch()
     if current_epoch > epoch:
-        self.prev_packed_staked[_account] = self.packed_staked[_account]
+        self.prev_packed_staked[_account] = packed
     self.packed_staked[_account] = self._pack(current_epoch, time, staked, ramping)
 
     return True
