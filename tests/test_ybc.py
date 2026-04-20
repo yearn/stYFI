@@ -26,6 +26,13 @@ def test_call(project, deployer, alice, ybc):
     assert token.balanceOf(ybc) == 2 * UNIT
     assert token.balanceOf(alice) == UNIT
 
+def test_call_return(project, deployer, alice, ybc):
+    # call can return data
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(alice, 3 * UNIT, sender=deployer)
+    data = ybc.call(token, token.balanceOf.encode_input(alice), sender=alice).return_value
+    assert int.from_bytes(data) == 3 * UNIT
+
 def test_call_permission(project, deployer, alice, bob, ybc):
     # only operators can call arbitrary functions on behalf of the YBC
     token = project.MockToken.deploy(sender=deployer)

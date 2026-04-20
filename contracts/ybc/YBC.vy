@@ -87,7 +87,7 @@ def remove_member(_account: address):
     log RemoveMember(member=_account)
 
 @external
-def call(_target: address, _data: Bytes[2048]):
+def call(_target: address, _data: Bytes[2048]) -> Bytes[1024]:
     """
     @notice Call a function on behalf of the YBC
     @param _target Contract to call
@@ -96,8 +96,8 @@ def call(_target: address, _data: Bytes[2048]):
     """
     assert self.operators[msg.sender]
 
-    raw_call(_target, _data)
     log Call(operator=msg.sender, target=_target, data=_data)
+    return raw_call(_target, _data, max_outsize=1024)
 
 @external
 def set_hooks(_hooks: address):
