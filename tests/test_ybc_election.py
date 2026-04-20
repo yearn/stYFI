@@ -2,6 +2,7 @@ from ape import reverts
 from pytest import fixture
 
 EPOCH_LENGTH = 14 * 24 * 60 * 60
+DECAY_LENGTH = 24 * 60 * 60
 UNIT = 10**18
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 PROPOSED  = 1 << 0
@@ -149,7 +150,7 @@ def test_vote_nay(chain, alice, bob, charlie, genesis, election):
     assert not election.voted(alice, 0)
     assert election.proposals(0).votes == 0
     assert election.proposals(0).yea == 0
-    chain.pending_timestamp = genesis + 2 * EPOCH_LENGTH - 100
+    chain.pending_timestamp = genesis + EPOCH_LENGTH * 3 // 2
     election.vote_nay(0, sender=alice)
     assert election.voted(alice, 0)
     assert election.proposals(0).votes == UNIT
@@ -160,6 +161,28 @@ def test_vote_nay(chain, alice, bob, charlie, genesis, election):
     assert election.voted(bob, 0)
     assert election.proposals(0).votes == 3 * UNIT
     assert election.proposals(0).yea == 0
+
+def test_vote_decay(chain, alice, bob, charlie, genesis, election):
+    # vote weight decays in the last 24h
+    election.propose_addition(charlie, sender=alice)
+
+    with chain.isolate():
+        # before 24h: full weight
+        chain.pending_timestamp = genesis + 2 * EPOCH_LENGTH - DECAY_LENGTH
+        election.vote_yea(0, sender=alice)
+        assert election.proposals(0).votes == UNIT
+
+    with chain.isolate():
+        # 12h: half weight
+        chain.pending_timestamp = genesis + 2 * EPOCH_LENGTH - DECAY_LENGTH // 2
+        election.vote_yea(0, sender=alice)
+        assert election.proposals(0).votes == UNIT // 2
+
+    with chain.isolate():
+        # 6h: quarter weight
+        chain.pending_timestamp = genesis + 2 * EPOCH_LENGTH - DECAY_LENGTH // 4
+        election.vote_yea(0, sender=alice)
+        assert election.proposals(0).votes == UNIT // 4
 
 def test_vote_multiple(chain, alice, charlie, genesis, election):
     # YBC members cant vote more than once
@@ -222,7 +245,7 @@ def test_addition_passed(chain, deployer, alice, bob, charlie, genesis, aggregat
     aggregator.set_weight(bob, UNIT, sender=deployer)
 
     ts = genesis + 2 * EPOCH_LENGTH
-    chain.pending_timestamp = ts - 100
+    chain.pending_timestamp = ts - DECAY_LENGTH - 100
     chain.mine()
 
     # 50% -> passed
@@ -245,7 +268,7 @@ def test_addition_failed(chain, deployer, alice, bob, charlie, genesis, aggregat
     aggregator.set_weight(bob, UNIT + 1, sender=deployer)
 
     ts = genesis + 2 * EPOCH_LENGTH
-    chain.pending_timestamp = ts - 100
+    chain.pending_timestamp = ts - DECAY_LENGTH - 100
     chain.mine()
 
     # 50% - 1 -> failed
@@ -281,7 +304,7 @@ def test_expulsion_passed(chain, deployer, alice, bob, charlie, genesis, ybc, ag
     aggregator.set_weight(bob, 4 * UNIT, sender=deployer)
 
     ts = genesis + 2 * EPOCH_LENGTH
-    chain.pending_timestamp = ts - 100
+    chain.pending_timestamp = ts - DECAY_LENGTH - 100
     chain.mine()
 
     # 60% -> passed
@@ -305,7 +328,7 @@ def test_expulsion_failed(chain, deployer, alice, bob, charlie, genesis, ybc, ag
     aggregator.set_weight(bob, 4 * UNIT + 1, sender=deployer)
 
     ts = genesis + 2 * EPOCH_LENGTH
-    chain.pending_timestamp = ts - 100
+    chain.pending_timestamp = ts - DECAY_LENGTH - 100
     chain.mine()
 
     # 60% - 1 -> failed
@@ -340,7 +363,7 @@ def test_execute_addition(chain, deployer, alice, bob, charlie, genesis, hooks, 
     aggregator.set_weight(bob, UNIT, sender=deployer)
 
     ts = genesis + 2 * EPOCH_LENGTH
-    chain.pending_timestamp = ts - 100
+    chain.pending_timestamp = ts - DECAY_LENGTH - 100
     chain.mine()
 
     election.vote_yea(0, sender=alice)
@@ -365,7 +388,7 @@ def test_execute_addition_threshold(chain, deployer, alice, bob, charlie, genesi
     aggregator.set_weight(bob, UNIT + 1, sender=deployer)
 
     ts = genesis + 2 * EPOCH_LENGTH
-    chain.pending_timestamp = ts - 100
+    chain.pending_timestamp = ts - DECAY_LENGTH - 100
     chain.mine()
 
     election.vote_yea(0, sender=alice)
@@ -385,7 +408,7 @@ def test_execute_expulsion(chain, deployer, alice, bob, charlie, genesis, hooks,
     aggregator.set_weight(bob, 4 * UNIT, sender=deployer)
 
     ts = genesis + 2 * EPOCH_LENGTH
-    chain.pending_timestamp = ts - 100
+    chain.pending_timestamp = ts - DECAY_LENGTH - 100
     chain.mine()
 
     election.vote_yea(0, sender=alice)
@@ -411,7 +434,7 @@ def test_execute_expulsion_threshold(chain, deployer, alice, bob, charlie, genes
     aggregator.set_weight(bob, 4 * UNIT + 1, sender=deployer)
 
     ts = genesis + 2 * EPOCH_LENGTH
-    chain.pending_timestamp = ts - 100
+    chain.pending_timestamp = ts - DECAY_LENGTH - 100
     chain.mine()
 
     election.vote_yea(0, sender=alice)
@@ -428,7 +451,7 @@ def test_execute_double(chain, deployer, alice, charlie, genesis, ybc, election)
     election.propose_addition(charlie, sender=alice)
 
     ts = genesis + 2 * EPOCH_LENGTH
-    chain.pending_timestamp = ts - 100
+    chain.pending_timestamp = ts - DECAY_LENGTH - 100
     chain.mine()
 
     election.vote_yea(0, sender=alice)
@@ -445,7 +468,7 @@ def test_execute_early(chain, alice, charlie, genesis, election):
     election.propose_addition(charlie, sender=alice)
 
     ts = genesis + 2 * EPOCH_LENGTH
-    chain.pending_timestamp = ts - 100
+    chain.pending_timestamp = ts - DECAY_LENGTH - 100
     chain.mine()
 
     election.vote_yea(0, sender=alice)
@@ -461,7 +484,7 @@ def test_execute_late(chain, alice, charlie, genesis, election):
     election.propose_addition(charlie, sender=alice)
 
     ts = genesis + 2 * EPOCH_LENGTH
-    chain.pending_timestamp = ts - 100
+    chain.pending_timestamp = ts - DECAY_LENGTH - 100
     chain.mine()
 
     election.vote_yea(0, sender=alice)

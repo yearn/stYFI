@@ -100,7 +100,7 @@ This component is supposed to be added to the RewardClaimer, allowing YBC member
 ### YBC Election
 Membership of the Collective is regulated by the **YBCElection** contract. Any current member can nominate anyone else to be added to the Collective. Any current member can also nominate any member for expulsion from the Collective.
 
-A proposal made in epoch `N-1` can be retracted in the same epoch and can be voted on in the second half of epoch `N`, leaving at least 1 week of discussion for any proposal. All YBC members are allowed to vote once on each proposal, with their vote weight determined by the YBCWeightAggregator. The only exception is that members are not allowed to vote on their own expulsion.
+A proposal made in epoch `N-1` can be retracted in the same epoch and can be voted on in the second half of epoch `N`, leaving at least 1 week of discussion for any proposal. All YBC members are allowed to vote once on each proposal, with their vote weight determined by the YBCWeightAggregator. The only exception is that members are not allowed to vote on their own expulsion. To prevent last second manipulation, vote weights decay from full to 0 in the last 24 hours.
 
 The vote ends at the end of epoch `N`. If a threshold fraction of votes is in favor of the proposal, the proposal is considered passed. Addition and expulsion votes have their own distinct configurable thresholds.
 

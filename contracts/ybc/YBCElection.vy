@@ -87,6 +87,7 @@ event SetManagement:
 
 EPOCH_LENGTH: constant(uint256) = 14 * 24 * 60 * 60
 VOTE_LENGTH: constant(uint256) = EPOCH_LENGTH // 2
+DECAY_LENGTH: constant(uint256) = 24 * 60 * 60
 THRESHOLD_PRECISION: constant(uint256) = 10_000
 ADDITION: constant(bool) = True
 EXPULSION: constant(bool) = False
@@ -323,7 +324,8 @@ def _vote(_idx: uint256, _yea: bool):
         # not allowed to vote on your own expulsion
         assert msg.sender != target
     assert self.proposals[_idx].epoch == self._epoch()
-    assert (block.timestamp - genesis) % EPOCH_LENGTH >= EPOCH_LENGTH - VOTE_LENGTH
+    epoch_progress: uint256 = (block.timestamp - genesis) % EPOCH_LENGTH
+    assert epoch_progress >= EPOCH_LENGTH - VOTE_LENGTH
     assert not self.proposals[_idx].retracted
     bitmap: uint256 = self.votes[msg.sender][_idx // 256]
     assert bitmap & (1 << _idx % 256) == 0
@@ -332,6 +334,8 @@ def _vote(_idx: uint256, _yea: bool):
     self.votes[msg.sender][_idx // 256] = bitmap
 
     weight: uint256 = staticcall self.weight_aggregator.weight(msg.sender)
+    if epoch_progress > EPOCH_LENGTH - DECAY_LENGTH:
+        weight = weight * (EPOCH_LENGTH - epoch_progress) // DECAY_LENGTH
     assert weight > 0
 
     self.proposals[_idx].votes += weight
