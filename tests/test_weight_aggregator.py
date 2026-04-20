@@ -211,6 +211,10 @@ def test_activate_stake(chain, deployer, alice, bob, yfi, styfi, genesis, srd, l
     chain.mine()
     assert aggregator.weight(alice) == 13 * UNIT + 2 * UNIT * 3 // 8
 
+    # change ramp length
+    aggregator.set_ramp_length(8, sender=deployer)
+    assert aggregator.weight(alice) == 13 * UNIT + UNIT * 3 // 8
+
     # stake and unstake in same epoch
     yfi.mint(alice, UNIT, sender=deployer)
     yfi.approve(styfi, UNIT, sender=alice)
@@ -285,3 +289,15 @@ def test_activate_unstake(chain, deployer, alice, bob, yfi, styfi, genesis, srd,
     assert aggregator.staked(alice) == 11 * UNIT
     assert aggregator.weight(alice) == 11 * UNIT
     assert ybc_aggregator.last_unstake() == (alice, 15 * UNIT, 13 * UNIT, 2 * UNIT)
+
+def test_set_ramp_length(deployer, aggregator):
+    # ramp length can be changed
+    assert aggregator.ramp_length() == 4 * EPOCH_LENGTH
+    aggregator.set_ramp_length(8, sender=deployer)
+    assert aggregator.ramp_length() == 8 * EPOCH_LENGTH
+
+def test_set_ramp_length_permission(deployer, alice, aggregator):
+    # ramp length can only be changed by management
+    with reverts():
+        aggregator.set_ramp_length(8, sender=alice)
+    aggregator.set_ramp_length(8, sender=deployer)

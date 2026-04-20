@@ -32,6 +32,7 @@ implements: IWeightAggregator
 genesis: public(immutable(uint256))
 management: public(address)
 pending_management: public(address)
+ramp_length: public(uint256)
 weight_aggregator: public(IWeightAggregator)
 upstream_weights: public(address)
 upstream_members: public(address)
@@ -41,6 +42,9 @@ prev_packed_supply: public(uint256)
 packed_supply: public(uint256)
 prev_packed_staked: public(HashMap[address, uint256])
 packed_staked: public(HashMap[address, uint256])
+
+event SetRampLength:
+    epochs: uint256
 
 event SetWeightAggregator:
     aggregator: indexed(address)
@@ -61,7 +65,6 @@ event SetManagement:
     management: indexed(address)
 
 EPOCH_LENGTH: constant(uint256) = 14 * 24 * 60 * 60
-RAMP_LENGTH: constant(uint256) = 2 * EPOCH_LENGTH
 INCREMENT: constant(bool) = True
 DECREMENT: constant(bool) = False
 EPOCH_MASK: constant(uint256) = 2**16 - 1
@@ -74,9 +77,10 @@ def __init__(_genesis: uint256):
     @notice Constructor
     @param _genesis Genesis timestamp
     """
-    assert block.timestamp >= _genesis + RAMP_LENGTH
+    assert block.timestamp >= _genesis + 2 * EPOCH_LENGTH
     genesis = _genesis
     self.management = msg.sender
+    self.ramp_length = 2 * EPOCH_LENGTH
 
 @external
 @view
@@ -225,6 +229,19 @@ def on_unstake(_account: address, _: uint256, _prev_staked: uint256, _amount: ui
         extcall self.downstream.on_unstake(_account, prev_supply, _prev_staked, _amount)
 
 @external
+def set_ramp_length(_epochs: uint256):
+    """
+    @notice Set the weight ramp length
+    @param _epochs Ramp length (epochs)
+    @dev Can only be called by management
+    """
+    assert msg.sender == self.management
+    assert _epochs >= 2
+
+    self.ramp_length = _epochs * EPOCH_LENGTH
+    log SetRampLength(epochs=_epochs)
+
+@external
 def set_weight_aggregator(_aggregator: address):
     """
     @notice Set the weight aggregator
@@ -354,7 +371,8 @@ def _staked(_account: address, _weighted: bool) -> uint256:
 
     # snapshot at beginning of the epoch
     time = epoch_start - time
-    return staked - ramping + ramping * min(time, RAMP_LENGTH) // RAMP_LENGTH
+    ramp_length: uint256 = self.ramp_length
+    return staked - ramping + ramping * min(time, ramp_length) // ramp_length
 
 @internal
 def _update_supply(_amount: uint256, _increment: bool) -> uint256:
@@ -400,7 +418,8 @@ def _update_staked(_account: address, _amount: uint256, _increment: bool) -> boo
     if _increment == INCREMENT:
         staked += _amount
         # remove already ramped amount and add new amount
-        ramping = ramping * (RAMP_LENGTH - min(block.timestamp - time, RAMP_LENGTH)) // RAMP_LENGTH + _amount
+        ramp_length: uint256 = self.ramp_length
+        ramping = ramping * (ramp_length - min(block.timestamp - time, ramp_length)) // ramp_length + _amount
         time = block.timestamp
     else:
         new_staked: uint256 = staked - _amount

@@ -32,6 +32,7 @@ implements: IWeightAggregator
 genesis: public(immutable(uint256))
 management: public(address)
 pending_management: public(address)
+ramp_length: public(uint256)
 downstream: public(IHooks)
 num_components: public(uint256)
 components: public(HashMap[uint256, address]) # idx => component
@@ -51,6 +52,9 @@ event AddComponent:
 event RemoveComponent:
     component: indexed(address)
 
+event SetRampLength:
+    epochs: uint256
+
 event SetDownstream:
     downstream: indexed(address)
 
@@ -62,7 +66,6 @@ event SetManagement:
 
 MAX_NUM_COMPONENTS: constant(uint256) = 32
 EPOCH_LENGTH: constant(uint256) = 14 * 24 * 60 * 60
-RAMP_LENGTH: constant(uint256) = 4 * EPOCH_LENGTH
 INCREMENT: constant(bool) = True
 DECREMENT: constant(bool) = False
 EPOCH_MASK: constant(uint256) = 2**16 - 1
@@ -75,9 +78,10 @@ def __init__(_genesis: uint256):
     @notice Constructor
     @param _genesis Genesis timestamp
     """
-    assert block.timestamp >= _genesis + RAMP_LENGTH
+    assert block.timestamp >= _genesis + 4 * EPOCH_LENGTH
     genesis = _genesis
     self.management = msg.sender
+    self.ramp_length = 4 * EPOCH_LENGTH
 
 @external
 @view
@@ -253,6 +257,19 @@ def remove_component(_idx: uint256):
     log RemoveComponent(component=component)
 
 @external
+def set_ramp_length(_epochs: uint256):
+    """
+    @notice Set the weight ramp length
+    @param _epochs Ramp length (epochs)
+    @dev Can only be called by management
+    """
+    assert msg.sender == self.management
+    assert _epochs >= 2
+
+    self.ramp_length = _epochs * EPOCH_LENGTH
+    log SetRampLength(epochs=_epochs)
+
+@external
 def set_downstream(_downstream: address):
     """
     @notice Set the downstream address where hooks are forwarded to
@@ -347,7 +364,8 @@ def _staked(_account: address, _weighted: bool) -> uint256:
 
     # snapshot at beginning of the epoch
     time = epoch_start - time
-    return staked - ramping + ramping * min(time, RAMP_LENGTH) // RAMP_LENGTH
+    ramp_length: uint256 = self.ramp_length
+    return staked - ramping + ramping * min(time, ramp_length) // ramp_length
 
 @internal
 @view
@@ -419,7 +437,8 @@ def _update_staked(_account: address, _prev: uint256, _amount: uint256, _increme
     if _increment == INCREMENT:
         staked += _amount
         # remove already ramped amount and add new amount
-        ramping = ramping * (RAMP_LENGTH - min(block.timestamp - time, RAMP_LENGTH)) // RAMP_LENGTH + _amount
+        ramp_length: uint256 = self.ramp_length
+        ramping = ramping * (ramp_length - min(block.timestamp - time, ramp_length)) // ramp_length + _amount
         time = block.timestamp
     else:
         new_staked: uint256 = staked - _amount

@@ -1,3 +1,4 @@
+from ape import reverts
 from pytest import fixture
 
 EPOCH_LENGTH = 14 * 24 * 60 * 60
@@ -105,6 +106,11 @@ def test_add_member(chain, deployer, alice, bob, charlie, yfi, styfi, genesis, a
     chain.mine()
     assert ybc_aggregator.total_weight() == 2 * UNIT
     assert ybc_aggregator.weight(alice) == UNIT
+
+    with chain.isolate():
+        # change ramp length
+        ybc_aggregator.set_ramp_length(4, sender=deployer)
+        assert ybc_aggregator.weight(alice) == UNIT // 2
 
     # add bob to the YBC too
     chain.pending_timestamp = ts
@@ -359,3 +365,15 @@ def test_transfer(chain, deployer, alice, bob, charlie, yfi, styfi, genesis, ybc
         assert ybc_aggregator.supply() == 3 * UNIT
         assert ybc_aggregator.staked(charlie) == 0
         assert ybc_aggregator.staked(deployer) == 0
+
+def test_set_ramp_length(deployer, ybc_aggregator):
+    # ramp length can be changed
+    assert ybc_aggregator.ramp_length() == 2 * EPOCH_LENGTH
+    ybc_aggregator.set_ramp_length(4, sender=deployer)
+    assert ybc_aggregator.ramp_length() == 4 * EPOCH_LENGTH
+
+def test_set_ramp_length_permission(deployer, alice, ybc_aggregator):
+    # ramp length can only be changed by management
+    with reverts():
+        ybc_aggregator.set_ramp_length(4, sender=alice)
+    ybc_aggregator.set_ramp_length(4, sender=deployer)
