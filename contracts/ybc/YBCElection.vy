@@ -152,7 +152,6 @@ def propose_addition(_account: address) -> uint256:
     @return Proposal index
     @dev Can only be called by current YBC members
     """
-    assert staticcall ybc.members(msg.sender)
     assert not staticcall ybc.members(_account)
     return self._propose(_account, ADDITION)
 
@@ -164,7 +163,6 @@ def propose_expulsion(_account: address) -> uint256:
     @return Proposal index
     @dev Can only be called by current YBC members
     """
-    assert staticcall ybc.members(msg.sender)
     assert staticcall ybc.members(_account)
     return self._propose(_account, EXPULSION)
 
@@ -289,6 +287,7 @@ def _propose(_account: address, _addition: bool) -> uint256:
     """
     @notice Create a new proposal
     """
+    assert staticcall ybc.members(msg.sender)
     assert _account not in [empty(address), ybc.address]
 
     idx: uint256 = self.num_proposals
