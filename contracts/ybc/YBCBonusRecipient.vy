@@ -35,7 +35,7 @@ def __init__(_styfi: address, _ybc: address):
     yfi = IERC20(staticcall styfi.asset())
     ybc = _ybc
 
-    assert extcall yfi.approve(_styfi, max_value(uint256))
+    assert extcall yfi.approve(_styfi, max_value(uint256), default_return_value=True)
 
 @external
 def deposit_bonus(_amount: uint256):
