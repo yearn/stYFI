@@ -112,6 +112,7 @@ event SetManagement:
 PRECISION: constant(uint256) = 10**18
 BPS_PRECISION: constant(uint256) = 10000
 PERIOD_LENGTH: constant(uint256) = 6 * 14 * 24 * 60 * 60
+AUCTION_LENGTH: constant(uint256) = 24 * 60 * 60
 INCREMENT: constant(bool) = True
 
 @deploy
@@ -161,7 +162,7 @@ def deposit(_token: address, _amount: uint256) -> (uint256, uint256):
     assert extcall IERC20(_token).transferFrom(msg.sender, self, _amount, default_return_value=True)
     converter: address = self.converters[_token]
     if converter != empty(address):
-        extcall IERC20(_token).approve(converter, _amount)
+        assert extcall IERC20(_token).approve(converter, _amount, default_return_value=True)
         extcall IConverter(converter).convert(_token, _amount)
 
     period: uint256 = self._period()
@@ -183,7 +184,7 @@ def convert(_token: address, _amount: uint256):
     assert msg.sender == self.operator
     converter: address = self.converters[_token]
     assert converter != empty(address)
-    extcall IERC20(_token).approve(converter, _amount)
+    assert extcall IERC20(_token).approve(converter, _amount, default_return_value=True)
     extcall IConverter(converter).convert(_token, _amount)
     log ConvertToken(token=_token, converter=converter, amount=_amount)
 
@@ -200,7 +201,7 @@ def to_styfi_rewards(_epoch: uint256, _amount: uint256):
     self._use_balance(0, _amount)
     distributor: IRewardDistributor = self.reward_distributor
     assert staticcall distributor.token() == token.address
-    extcall token.approve(distributor.address, _amount)
+    assert extcall token.approve(distributor.address, _amount, default_return_value=True)
     extcall distributor.deposit(_epoch, _amount)
     log ToRewards(epoch=_epoch, amount=_amount)
 
@@ -230,7 +231,12 @@ def to_yeth_recovery(_amount: uint256):
 
     # check token is enabled inside the auction
     auction: IAuction = self.recovery_auction
-    assert (staticcall auction.auctions(token.address))[1] > 0
+    kicked: uint64 = 0
+    scaler: uint64 = 0
+    available: uint128 = 0
+    kicked, scaler, available = staticcall auction.auctions(token.address)
+    assert scaler > 0
+    assert block.timestamp >= convert(kicked, uint256) + AUCTION_LENGTH
 
     assert extcall token.transfer(auction.address, _amount, default_return_value=True)
     extcall auction.kick(token.address)

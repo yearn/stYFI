@@ -238,7 +238,7 @@ def claim(_idx: uint256, _amount: uint256, _recipient: address) -> (uint256, uin
     else:
         # tokens vest over time
         factory: IVestingFactory = self.vesting_factory
-        extcall IERC20(token).approve(factory.address, _amount)
+        assert extcall IERC20(token).approve(factory.address, _amount, default_return_value=True)
         vest = extcall factory.deploy_vesting_contract(token, _recipient, _amount, duration, start, 0, True, 0, self.vesting_owner)
 
     log ClaimFunding(idx=_idx, team=msg.sender, period=period, token=token, amount=_amount, cost=value, vest=vest, recipient=_recipient)

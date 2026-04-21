@@ -194,7 +194,7 @@ def claim(_team: address, _recipient: address = msg.sender) -> (uint256, uint256
 
     if ybc_amount > 0:
         recipient: IYBCRecipient = self.ybc_recipient
-        extcall bonus_token.approve(recipient.address, ybc_amount)
+        assert extcall bonus_token.approve(recipient.address, ybc_amount, default_return_value=True)
         extcall recipient.deposit_bonus(ybc_amount)
 
     return team_amount, ybc_amount

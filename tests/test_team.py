@@ -36,7 +36,7 @@ def distributor(project, deployer, genesis, accountant, token, vault, oracle):
 
 @fixture
 def recipient(project, deployer, genesis, accountant, token, vault, oracle):
-    recipient = project.RevenueRecipient.deploy(genesis, sender=deployer)
+    recipient = project.RevenueRecipient.deploy(genesis, vault, [8000, 1000, 1000], sender=deployer)
     recipient.set_price_oracle(token, oracle, sender=deployer)
     recipient.set_price_oracle(vault, oracle, sender=deployer)
     recipient.set_token_converter(token, oracle, sender=deployer)

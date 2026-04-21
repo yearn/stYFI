@@ -95,7 +95,7 @@ def deposit_revenue(_token: address, _amount: uint256) -> uint256:
     """
     recipient: address = staticcall self.registry.revenue_recipient()
     assert extcall IERC20(_token).transferFrom(msg.sender, self, _amount, default_return_value=True)
-    extcall IERC20(_token).approve(recipient, _amount)
+    assert extcall IERC20(_token).approve(recipient, _amount, default_return_value=True)
     period: uint256 = 0
     revenue: uint256 = 0
     period, revenue = extcall IRevenueRecipient(recipient).deposit(_token, _amount)
@@ -143,7 +143,7 @@ def return_funding(_idx: uint256, _amount: uint256) -> (address, uint256):
     token: address = staticcall IFundingDistributor(distributor).token(_idx)
 
     assert extcall IERC20(token).transferFrom(msg.sender, self, _amount, default_return_value=True)
-    extcall IERC20(token).approve(distributor, _amount)
+    assert extcall IERC20(token).approve(distributor, _amount, default_return_value=True)
 
     period: uint256 = 0
     refund: uint256 = 0
