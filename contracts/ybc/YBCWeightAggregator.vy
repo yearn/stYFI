@@ -7,7 +7,7 @@
 @license GNU AGPLv3
 @notice Aggregates staked balances for YBC members only. This will allow for fair
         yield redistribution and decision making inside the Collective.
-        Weights ramp up over 2 epochs and are snapshotted at the beginning of every epoch.
+        Weights ramp up over 4 epochs.
 """
 
 interface IMemberHooks:
@@ -22,7 +22,6 @@ interface IStakedHooks:
 interface IWeightAggregator:
     def supply() -> uint256: view
     def staked(_account: address) -> uint256: view
-    def total_weight() -> uint256: view
     def weight(_account: address) -> uint256: view
 
 implements: IMemberHooks
@@ -32,19 +31,13 @@ implements: IWeightAggregator
 genesis: public(immutable(uint256))
 management: public(address)
 pending_management: public(address)
-ramp_length: public(uint256)
 weight_aggregator: public(IWeightAggregator)
 upstream_weights: public(address)
 upstream_members: public(address)
 downstream: public(IStakedHooks)
 
-prev_packed_supply: public(uint256)
-packed_supply: public(uint256)
-prev_packed_staked: public(HashMap[address, uint256])
-packed_staked: public(HashMap[address, uint256])
-
-event SetRampLength:
-    epochs: uint256
+supply: public(uint256)
+packed_weights: public(HashMap[address, uint256])
 
 event SetWeightAggregator:
     aggregator: indexed(address)
@@ -68,8 +61,8 @@ EPOCH_LENGTH: constant(uint256) = 14 * 24 * 60 * 60
 INCREMENT: constant(bool) = True
 DECREMENT: constant(bool) = False
 EPOCH_MASK: constant(uint256) = 2**16 - 1
-TIME_MASK: constant(uint256) = 2**40 - 1
-AMOUNT_MASK: constant(uint256) = 2**100 - 1
+WEIGHT_MASK: constant(uint256) = 2**60 - 1
+PACKING_SCALE: constant(uint256) = 10**6
 
 @deploy
 def __init__(_genesis: uint256):
@@ -80,16 +73,6 @@ def __init__(_genesis: uint256):
     assert block.timestamp >= _genesis + 2 * EPOCH_LENGTH
     genesis = _genesis
     self.management = msg.sender
-    self.ramp_length = 2 * EPOCH_LENGTH
-
-@external
-@view
-def supply() -> uint256:
-    """
-    @notice Query the supply, the sum of all staked balances of YBC members in all components
-    @return Supply
-    """
-    return self._supply(False)
 
 @external
 @view
@@ -99,17 +82,11 @@ def staked(_account: address) -> uint256:
     @param _account Account to query for
     @return Staked amount. Zero if not a member of the YBC
     """
-    return self._staked(_account, False)
+    if self.packed_weights[_account] == 0:
+        # not a YBC member
+        return 0
 
-@external
-@view
-def total_weight() -> uint256:
-    """
-    @notice Query the total weight, which is an upper bound on the sum of all YBC member weights
-            in the epoch. Snapshotted at the beginning of every epoch.
-    @return Total weight
-    """
-    return self._supply(True)
+    return staticcall self.weight_aggregator.staked(_account)
 
 @external
 @view
@@ -120,7 +97,14 @@ def weight(_account: address) -> uint256:
     @param _account Account to query for
     @return Staked amount. Zero if not a member of the YBC
     """
-    return self._staked(_account, True)
+    packed: uint256 = self.packed_weights[_account]
+    if packed == 0:
+        # not a YBC member
+        return 0
+
+    staked: uint256 = staticcall self.weight_aggregator.staked(_account)
+    packed = self._forward(self._epoch(), staked, packed)
+    return ((packed >> 180) & WEIGHT_MASK) * PACKING_SCALE
 
 @external
 def on_add_member(_account: address):
@@ -130,12 +114,13 @@ def on_add_member(_account: address):
     @dev Forwarded downstream as a staking operation of the entire aggregated balance
     """
     assert msg.sender == self.upstream_members
-    assert self.packed_staked[_account] == 0
+    assert self.packed_weights[_account] == 0
 
     staked: uint256 = staticcall self.weight_aggregator.staked(_account)
-    self.prev_packed_staked[_account] = 0
-    self.packed_staked[_account] = self._pack(self._epoch(), block.timestamp, staked, staked)
+    self.packed_weights[_account] = self._epoch() << 240
+
     prev_supply: uint256 = self._update_supply(staked, INCREMENT)
+    self._update_staked(_account, 0, staked, INCREMENT)
 
     extcall self.downstream.on_stake(_account, _account, prev_supply, 0, staked)
 
@@ -147,11 +132,10 @@ def on_remove_member(_account: address):
     @dev Forwarded downstream as a unstaking operation of the entire aggregated balance
     """
     assert msg.sender == self.upstream_members
-    assert self.packed_staked[_account] > 0
+    assert self.packed_weights[_account] > 0
 
     staked: uint256 = staticcall self.weight_aggregator.staked(_account)
-    self.prev_packed_staked[_account] = 0
-    self.packed_staked[_account] = 0
+    self.packed_weights[_account] = 0
     prev_supply: uint256 = self._update_supply(staked, DECREMENT)
 
     extcall self.downstream.on_unstake(_account, prev_supply, staked, staked)
@@ -173,22 +157,21 @@ def on_transfer(_caller: address, _from: address, _to: address, _: uint256, _pre
     assert msg.sender == self.upstream_weights
 
     # the upstream supply includes non-members, so we have to track it ourselves
-    prev_supply: uint256 = self._unpack(self.packed_supply)[2]
-    is_ybc_from: bool = self._update_staked(_from, _amount, DECREMENT)
-    is_ybc_to: bool = self._update_staked(_to, _amount, INCREMENT)
+    is_ybc_from: bool = self._update_staked(_from, _prev_staked_from, _amount, DECREMENT)
+    is_ybc_to: bool = self._update_staked(_to, _prev_staked_to, _amount, INCREMENT)
 
     if is_ybc_from:
         if is_ybc_to:
             # both sides are in the YBC, pass transfer along
-            extcall self.downstream.on_transfer(_caller, _from, _to, prev_supply, _prev_staked_from, _prev_staked_to, _amount)
+            extcall self.downstream.on_transfer(_caller, _from, _to, self.supply, _prev_staked_from, _prev_staked_to, _amount)
         else:
             # only the sender is in the YBC, treat as unstaking
-            self._update_supply(_amount, DECREMENT)
+            prev_supply: uint256 = self._update_supply(_amount, DECREMENT)
             extcall self.downstream.on_unstake(_from, prev_supply, _prev_staked_from, _amount)
     elif is_ybc_to:
-            # only the receiver is in the YBC, treat as staking
-            self._update_supply(_amount, INCREMENT)
-            extcall self.downstream.on_stake(_caller, _to, prev_supply, _prev_staked_to, _amount)
+        # only the receiver is in the YBC, treat as staking
+        prev_supply: uint256 = self._update_supply(_amount, INCREMENT)
+        extcall self.downstream.on_stake(_caller, _to, prev_supply, _prev_staked_to, _amount)
     # if neither party is in the YBC, ignore
 
 @external
@@ -204,7 +187,7 @@ def on_stake(_caller: address, _account: address, _: uint256, _prev_staked: uint
     """
     assert msg.sender == self.upstream_weights
 
-    is_ybc: bool = self._update_staked(_account, _amount, INCREMENT)
+    is_ybc: bool = self._update_staked(_account, _prev_staked, _amount, INCREMENT)
     if is_ybc:
         # the upstream supply includes non-members, so we have to track it ourselves
         prev_supply: uint256 = self._update_supply(_amount, INCREMENT)
@@ -222,24 +205,11 @@ def on_unstake(_account: address, _: uint256, _prev_staked: uint256, _amount: ui
     """
     assert msg.sender == self.upstream_weights
 
-    is_ybc: bool = self._update_staked(_account, _amount, DECREMENT)
+    is_ybc: bool = self._update_staked(_account, _prev_staked, _amount, DECREMENT)
     if is_ybc:
         # the upstream supply includes non-members, so we have to track it ourselves
         prev_supply: uint256 = self._update_supply(_amount, DECREMENT)
         extcall self.downstream.on_unstake(_account, prev_supply, _prev_staked, _amount)
-
-@external
-def set_ramp_length(_epochs: uint256):
-    """
-    @notice Set the weight ramp length
-    @param _epochs Ramp length (epochs)
-    @dev Can only be called by management
-    """
-    assert msg.sender == self.management
-    assert _epochs >= 2
-
-    self.ramp_length = _epochs * EPOCH_LENGTH
-    log SetRampLength(epochs=_epochs)
 
 @external
 def set_weight_aggregator(_aggregator: address):
@@ -319,71 +289,11 @@ def _epoch() -> uint256:
     return unsafe_div(block.timestamp - genesis, EPOCH_LENGTH)
 
 @internal
-@view
-def _supply(_snapshot: bool) -> uint256:
-    """
-    @notice Get the (snapshotted) total staked amount
-    """
-    epoch: uint256 = 0
-    time: uint256 = 0
-    supply: uint256 = 0
-    ramping: uint256 = 0
-    epoch, time, supply, ramping = self._unpack(self.packed_supply)
-
-    if _snapshot and epoch == self._epoch():
-        # supply changed this epoch, use snapshot
-        epoch, time, supply, ramping = self._unpack(self.prev_packed_supply)
-
-    return supply
-
-@internal
-@view
-def _staked(_account: address, _weighted: bool) -> uint256:
-    """
-    @notice Get the (weighted) staked amount for an account
-    """
-    epoch: uint256 = 0
-    time: uint256 = 0
-    staked: uint256 = 0
-    ramping: uint256 = 0
-    epoch, time, staked, ramping = self._unpack(self.packed_staked[_account])
-
-    if epoch == 0:
-        return 0
-
-    if not _weighted:
-        return staked
-
-    epoch_start: uint256 = genesis + self._epoch() * EPOCH_LENGTH
-    if epoch == self._epoch():
-        # staked changed this epoch
-        prev_time: uint256 = 0
-        prev_staked: uint256 = 0
-        prev_ramping: uint256 = 0
-        epoch, prev_time, prev_staked, prev_ramping = self._unpack(self.prev_packed_staked[_account])
-        if staked > prev_staked:
-            # use previous value only if the stake has increased
-            time = prev_time
-            staked = prev_staked
-            ramping = prev_ramping
-        else:
-            time = min(time, epoch_start)
-
-    # snapshot at beginning of the epoch
-    time = epoch_start - time
-    ramp_length: uint256 = self.ramp_length
-    return staked - ramping + ramping * min(time, ramp_length) // ramp_length
-
-@internal
 def _update_supply(_amount: uint256, _increment: bool) -> uint256:
     """
     @notice Update the total staked amount
     """
-    epoch: uint256 = 0
-    time: uint256 = 0
-    supply: uint256 = 0
-    ramping: uint256 = 0
-    epoch, time, supply, ramping = self._unpack(self.packed_supply)
+    supply: uint256 = self.supply
     prev_supply: uint256 = supply
 
     if _increment == INCREMENT:
@@ -391,62 +301,63 @@ def _update_supply(_amount: uint256, _increment: bool) -> uint256:
     else:
         supply -= _amount
 
-    current_epoch: uint256 = self._epoch()
-    if current_epoch > epoch:
-        self.prev_packed_supply = self.packed_supply
-    self.packed_supply = self._pack(current_epoch, 0, supply, 0)
-
+    self.supply = supply
     return prev_supply
 
 @internal
-def _update_staked(_account: address, _amount: uint256, _increment: bool) -> bool:
+def _update_staked(_account: address, _prev_staked: uint256, _amount: uint256, _increment: bool) -> bool:
     """
     @notice Update the staked amount of an account
     """
-    packed: uint256 = self.packed_staked[_account]
+    packed: uint256 = self.packed_weights[_account]
     if packed == 0:
         # not a YBC member, ignore
         return False
-
-    epoch: uint256 = 0
-    time: uint256 = 0
-    staked: uint256 = 0
-    ramping: uint256 = 0
-    epoch, time, staked, ramping = self._unpack(packed)
-    prev_staked: uint256 = staked
-
+    packed = self._forward(self._epoch(), _prev_staked, packed)
+    
+    staked: uint256 = _prev_staked
+    sh: uint256 = 240
     if _increment == INCREMENT:
         staked += _amount
-        # remove already ramped amount and add new amount
-        ramp_length: uint256 = self.ramp_length
-        ramping = ramping * (ramp_length - min(block.timestamp - time, ramp_length)) // ramp_length + _amount
-        time = block.timestamp
-    else:
-        new_staked: uint256 = staked - _amount
-        # remove a proportional amount from ramp
-        ramping = ramping * new_staked // staked
-        staked = new_staked
 
-    current_epoch: uint256 = self._epoch()
-    if current_epoch > epoch:
-        self.prev_packed_staked[_account] = packed
-    self.packed_staked[_account] = self._pack(current_epoch, time, staked, ramping)
+        scaled: uint256 = _amount // PACKING_SCALE
+        for i: uint256 in range(4):
+            sh = unsafe_sub(sh, 60)
+            weight: uint256 = (packed >> sh) & WEIGHT_MASK
+            weight += scaled * i // 4
+            packed = (packed & ~(WEIGHT_MASK << sh)) | (weight << sh)
+    else:
+        staked -= _amount
+
+        scaled: uint256 = (_amount + PACKING_SCALE - 1) // PACKING_SCALE
+        for i: uint256 in range(4):
+            sh = unsafe_sub(sh, 60)
+            weight: uint256 = (packed >> sh) & WEIGHT_MASK
+            if scaled > weight:
+                weight = 0
+            else:
+                weight -= scaled
+            packed = (packed & ~(WEIGHT_MASK << sh)) | (weight << sh)
+
+    self.packed_weights[_account] = packed
 
     return True
 
 @internal
 @pure
-def _pack(_epoch: uint256, _time: uint256, _amount: uint256, _ramping: uint256) -> uint256:
-    """
-    @notice Pack four values into a single storage slot
-    """
-    assert _epoch <= EPOCH_MASK and _time <= TIME_MASK and _amount <= AMOUNT_MASK and _ramping <= AMOUNT_MASK
-    return (_epoch << 240) | (_time << 200) | (_amount << 100) | _ramping
+def _forward(_current_epoch: uint256, _staked: uint256, _packed: uint256) -> uint256:
+    epoch: uint256 = _packed >> 240
+    if epoch == _current_epoch:
+        return _packed
 
-@internal
-@pure
-def _unpack(_packed: uint256) -> (uint256, uint256, uint256, uint256):
-    """
-    @notice Unpack four values from a single storage slot
-    """
-    return _packed >> 240, (_packed >> 200) & TIME_MASK, (_packed >> 100) & AMOUNT_MASK, _packed & AMOUNT_MASK
+    staked: uint256 = _staked // PACKING_SCALE
+    assert staked <= WEIGHT_MASK
+
+    packed: uint256 = _packed
+    for i: uint256 in range(min(_current_epoch - epoch, 4), bound=4):
+        packed = (packed << 60) | staked
+    # after 4 iterations the slot contains all copies of `staked`, so no need to continue
+
+    # overwrite the epoch
+    packed = (packed & ~(EPOCH_MASK << 240)) | (_current_epoch << 240)
+    return packed

@@ -23,7 +23,6 @@ interface IHooks:
 interface IWeightAggregator:
     def supply() -> uint256: view
     def staked(_account: address) -> uint256: view
-    def total_weight() -> uint256: view
     def weight(_account: address) -> uint256: view
 
 implements: IHooks
@@ -32,15 +31,14 @@ implements: IWeightAggregator
 genesis: public(immutable(uint256))
 management: public(address)
 pending_management: public(address)
-ramp_length: public(uint256)
 downstream: public(IHooks)
 num_components: public(uint256)
 components: public(HashMap[uint256, address]) # idx => component
 depositors: public(HashMap[address, address]) # component => depositor
-prev_packed_supply: public(uint256)
-packed_supply: public(uint256)
-prev_packed_staked: public(HashMap[address, uint256])
-packed_staked: public(HashMap[address, uint256])
+
+supply: public(uint256)
+last_staked: public(HashMap[address, uint256])
+packed_weights: public(HashMap[address, uint256])
 
 event Activate:
     supply: uint256
@@ -51,9 +49,6 @@ event AddComponent:
 
 event RemoveComponent:
     component: indexed(address)
-
-event SetRampLength:
-    epochs: uint256
 
 event SetDownstream:
     downstream: indexed(address)
@@ -69,8 +64,8 @@ EPOCH_LENGTH: constant(uint256) = 14 * 24 * 60 * 60
 INCREMENT: constant(bool) = True
 DECREMENT: constant(bool) = False
 EPOCH_MASK: constant(uint256) = 2**16 - 1
-TIME_MASK: constant(uint256) = 2**40 - 1
-AMOUNT_MASK: constant(uint256) = 2**100 - 1
+WEIGHT_MASK: constant(uint256) = 2**60 - 1
+PACKING_SCALE: constant(uint256) = 10**6
 
 @deploy
 def __init__(_genesis: uint256):
@@ -81,7 +76,6 @@ def __init__(_genesis: uint256):
     assert block.timestamp >= _genesis + 4 * EPOCH_LENGTH
     genesis = _genesis
     self.management = msg.sender
-    self.ramp_length = 4 * EPOCH_LENGTH
 
 @external
 @view
@@ -94,43 +88,33 @@ def epoch() -> uint256:
 
 @external
 @view
-def supply() -> uint256:
-    """
-    @notice Query the supply, the sum of all staked balances in all components
-    @return Supply
-    """
-    return self._supply(False)
-
-@external
-@view
 def staked(_account: address) -> uint256:
     """
     @notice Query the staked amount of a specific account
     @param _account Account to query for
     @return Staked amount
     """
-    return self._staked(_account, False)
+    if self.packed_weights[_account] == 0:
+        # no update yet, calculate from components
+        return self._calculate_staked(_account, empty(address), 0)
 
-@external
-@view
-def total_weight() -> uint256:
-    """
-    @notice Query the total weight, which is an upper bound on the sum of all user weights
-            in the epoch. Snapshotted at the beginning of every epoch.
-    @return Total weight
-    """
-    return self._supply(True)
+    return self.last_staked[_account]
 
 @external
 @view
 def weight(_account: address) -> uint256:
     """
-    @notice Query the weight of a specific user. The weight ramps up over time after deposits
-            and is snapshotted at the beginning of every epoch.
+    @notice Query the weight of a specific user
     @param _account Account to query for
-    @return Staked amount
+    @return Weight
     """
-    return self._staked(_account, True)
+    packed: uint256 = self.packed_weights[_account]
+    if packed == 0:
+        # no update yet, calculate from components
+        return self._calculate_staked(_account, empty(address), 0)
+
+    packed = self._forward(self._epoch(), self.last_staked[_account], packed)
+    return ((packed >> 180) & WEIGHT_MASK) * PACKING_SCALE
 
 @external
 def on_transfer(_caller: address, _from: address, _to: address, _: uint256, _prev_staked_from: uint256, _prev_staked_to: uint256, _amount: uint256):
@@ -145,7 +129,7 @@ def on_transfer(_caller: address, _from: address, _to: address, _: uint256, _pre
     @param _amount Amount of tokens to transfer
     """
     assert self.depositors[msg.sender] != empty(address)
-    agg_supply: uint256 = self._unpack(self.packed_supply)[2]
+    agg_supply: uint256 = self.supply
     prev_agg_staked_from: uint256 = self._update_staked(_from, _prev_staked_from, _amount, DECREMENT)
     prev_agg_staked_to: uint256 = self._update_staked(_to, _prev_staked_to, _amount, INCREMENT)
     if self.downstream.address != empty(address):
@@ -194,7 +178,8 @@ def activate(_components: DynArray[address, 4]):
     @dev Activation should be done atomically with setting the aggregator as hook recipient to all the components
     """
     assert msg.sender == self.management
-    assert self.packed_supply == 0
+    assert len(_components) > 0
+    assert self.num_components == 0
 
     i: uint256 = 0
     supply: uint256 = 0
@@ -208,7 +193,7 @@ def activate(_components: DynArray[address, 4]):
         supply += staticcall IERC20(depositor).totalSupply()
         i += 1
 
-    self.packed_supply = self._pack(self._epoch() - 1, 0, supply, 0)
+    self.supply = supply
     log Activate(supply=supply)
 
 @external
@@ -222,9 +207,8 @@ def add_component(_component: address, _depositor: address) -> uint256:
     @dev Caller is responsible for ensuring consistency between the supply and balances before and after the call
     """
     assert msg.sender == self.management
-    assert self.packed_supply > 0
     idx: uint256 = self.num_components
-    assert idx < MAX_NUM_COMPONENTS
+    assert idx > 0 and idx < MAX_NUM_COMPONENTS
     assert _component != empty(address)
     assert self.depositors[_component] == empty(address)
     assert _depositor != empty(address)
@@ -246,7 +230,7 @@ def remove_component(_idx: uint256):
     """
     assert msg.sender == self.management
     last: uint256 = self.num_components - 1
-    assert _idx <= last
+    assert last > 0 and _idx <= last
 
     component: address = self.components[_idx]
     self.depositors[component] = empty(address)
@@ -255,19 +239,6 @@ def remove_component(_idx: uint256):
     self.components[last] = empty(address)
     self.num_components = last
     log RemoveComponent(component=component)
-
-@external
-def set_ramp_length(_epochs: uint256):
-    """
-    @notice Set the weight ramp length
-    @param _epochs Ramp length (epochs)
-    @dev Can only be called by management
-    """
-    assert msg.sender == self.management
-    assert _epochs >= 2
-
-    self.ramp_length = _epochs * EPOCH_LENGTH
-    log SetRampLength(epochs=_epochs)
 
 @external
 def set_downstream(_downstream: address):
@@ -312,63 +283,6 @@ def _epoch() -> uint256:
 
 @internal
 @view
-def _supply(_snapshot: bool) -> uint256:
-    """
-    @notice Get the (snapshotted) total staked amount
-    """
-    epoch: uint256 = 0
-    time: uint256 = 0
-    supply: uint256 = 0
-    ramping: uint256 = 0
-    epoch, time, supply, ramping = self._unpack(self.packed_supply)
-
-    if _snapshot and epoch == self._epoch():
-        # supply changed this epoch, use snapshot
-        epoch, time, supply, ramping = self._unpack(self.prev_packed_supply)
-
-    return supply
-
-@internal
-@view
-def _staked(_account: address, _weighted: bool) -> uint256:
-    """
-    @notice Get the (weighted) staked amount for an account
-    """
-    epoch: uint256 = 0
-    time: uint256 = 0
-    staked: uint256 = 0
-    ramping: uint256 = 0
-    epoch, time, staked, ramping = self._unpack(self.packed_staked[_account])
-
-    if epoch == 0:
-        # no update yet, calculate from components
-        return self._calculate_staked(_account, empty(address), 0)
-
-    if not _weighted:
-        return staked
-
-    epoch_start: uint256 = genesis + self._epoch() * EPOCH_LENGTH
-    if epoch == self._epoch():
-        # staked changed this epoch
-        prev_time: uint256 = 0
-        prev_staked: uint256 = 0
-        prev_ramping: uint256 = 0
-        epoch, prev_time, prev_staked, prev_ramping = self._unpack(self.prev_packed_staked[_account])
-        if staked > prev_staked:
-            # use previous value only if the stake has increased
-            time = prev_time
-            staked = prev_staked
-            ramping = prev_ramping
-        else:
-            time = min(time, epoch_start)
-
-    # snapshot at beginning of the epoch
-    time = epoch_start - time
-    ramp_length: uint256 = self.ramp_length
-    return staked - ramping + ramping * min(time, ramp_length) // ramp_length
-
-@internal
-@view
 def _calculate_staked(_account: address, _skip: address, _prev: uint256) -> uint256:
     """
     @notice Calculate the staked amount of an account by summing the balances in each depositor.
@@ -393,12 +307,7 @@ def _update_supply(_amount: uint256, _increment: bool) -> uint256:
     """
     @notice Update the total staked amount. Returns previous supply
     """
-
-    epoch: uint256 = 0
-    time: uint256 = 0
-    supply: uint256 = 0
-    ramping: uint256 = 0
-    epoch, time, supply, ramping = self._unpack(self.packed_supply)
+    supply: uint256 = self.supply
     prev_supply: uint256 = supply
 
     if _increment == INCREMENT:
@@ -406,11 +315,7 @@ def _update_supply(_amount: uint256, _increment: bool) -> uint256:
     else:
         supply -= _amount
 
-    current_epoch: uint256 = self._epoch()
-    if current_epoch > epoch:
-        self.prev_packed_supply = self.packed_supply
-    self.packed_supply = self._pack(current_epoch, 0, supply, 0)
-
+    self.supply = supply
     return prev_supply
 
 @internal
@@ -418,54 +323,59 @@ def _update_staked(_account: address, _prev: uint256, _amount: uint256, _increme
     """
     @notice Update the staked amount of an account. Returns previous staked amount
     """
-    packed: uint256 = self.packed_staked[_account]
-    epoch: uint256 = 0
-    time: uint256 = 0
-    staked: uint256 = 0
-    ramping: uint256 = 0
-    epoch, time, staked, ramping = self._unpack(packed)
+    staked: uint256 = self.last_staked[_account]
+    packed: uint256 = self.packed_weights[_account]
 
-    if epoch == 0:
+    if packed == 0:
         # first update since activation, calculate from components
-        epoch = 1
-        time = 0
         staked = self._calculate_staked(_account, msg.sender, _prev)
-        packed = self._pack(1, 0, staked, 0)
-        self.packed_staked[_account] = packed
+
+    packed = self._forward(self._epoch(), staked, packed)
     prev_staked: uint256 = staked
 
+    sh: uint256 = 240
     if _increment == INCREMENT:
         staked += _amount
-        # remove already ramped amount and add new amount
-        ramp_length: uint256 = self.ramp_length
-        ramping = ramping * (ramp_length - min(block.timestamp - time, ramp_length)) // ramp_length + _amount
-        time = block.timestamp
-    else:
-        new_staked: uint256 = staked - _amount
-        # remove a proportional amount from ramp
-        ramping = ramping * new_staked // staked
-        staked = new_staked
 
-    current_epoch: uint256 = self._epoch()
-    if current_epoch > epoch:
-        self.prev_packed_staked[_account] = packed
-    self.packed_staked[_account] = self._pack(current_epoch, time, staked, ramping)
+        scaled: uint256 = _amount // PACKING_SCALE
+        for i: uint256 in range(4):
+            sh = unsafe_sub(sh, 60)
+            weight: uint256 = (packed >> sh) & WEIGHT_MASK
+            weight += scaled * i // 4
+            packed = (packed & ~(WEIGHT_MASK << sh)) | (weight << sh)
+    else:
+        staked -= _amount
+
+        scaled: uint256 = (_amount + PACKING_SCALE - 1) // PACKING_SCALE
+        for i: uint256 in range(4):
+            sh = unsafe_sub(sh, 60)
+            weight: uint256 = (packed >> sh) & WEIGHT_MASK
+            if scaled > weight:
+                weight = 0
+            else:
+                weight -= scaled
+            packed = (packed & ~(WEIGHT_MASK << sh)) | (weight << sh)
+
+    self.last_staked[_account] = staked
+    self.packed_weights[_account] = packed
 
     return prev_staked
 
 @internal
 @pure
-def _pack(_epoch: uint256, _time: uint256, _amount: uint256, _ramping: uint256) -> uint256:
-    """
-    @notice Pack four values into a single storage slot
-    """
-    assert _epoch <= EPOCH_MASK and _time <= TIME_MASK and _amount <= AMOUNT_MASK and _ramping <= AMOUNT_MASK
-    return (_epoch << 240) | (_time << 200) | (_amount << 100) | _ramping
+def _forward(_current_epoch: uint256, _staked: uint256, _packed: uint256) -> uint256:
+    epoch: uint256 = _packed >> 240
+    if epoch == _current_epoch:
+        return _packed
 
-@internal
-@pure
-def _unpack(_packed: uint256) -> (uint256, uint256, uint256, uint256):
-    """
-    @notice Unpack four values from a single storage slot
-    """
-    return _packed >> 240, (_packed >> 200) & TIME_MASK, (_packed >> 100) & AMOUNT_MASK, _packed & AMOUNT_MASK
+    staked: uint256 = _staked // PACKING_SCALE
+    assert staked <= WEIGHT_MASK
+
+    packed: uint256 = _packed
+    for i: uint256 in range(min(_current_epoch - epoch, 4), bound=4):
+        packed = (packed << 60) | staked
+    # after 4 iterations the slot contains all copies of `staked`, so no need to continue
+
+    # overwrite the epoch
+    packed = (packed & ~(EPOCH_MASK << 240)) | (_current_epoch << 240)
+    return packed

@@ -6,6 +6,7 @@ RAMP_LENGTH = 4 * EPOCH_LENGTH
 COMPONENTS_SENTINEL = "0x1111111111111111111111111111111111111111"
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 UNIT = 10**18
+PACKED_UNIT = 10**12
 SCALES = [1, 4, 1]
 
 @fixture
@@ -90,34 +91,33 @@ def test_add_member(chain, deployer, alice, bob, charlie, yfi, styfi, genesis, a
     assert aggregator.weight(alice) == 2 * UNIT
     assert ybc_hooks.last_stake() == (ZERO_ADDRESS, ZERO_ADDRESS, 0, 0, 0)
     assert ybc_aggregator.supply() == 0
-    assert ybc_aggregator.total_weight() == 0
     assert ybc_aggregator.staked(alice) == 0
     assert ybc_aggregator.weight(alice) == 0
     chain.pending_timestamp = ts
     ybc.call(ybc, ybc.add_member.encode_input(alice), sender=charlie)
     assert ybc_hooks.last_stake() == (alice, alice, 0, 0, 2 * UNIT)
     assert ybc_aggregator.supply() == 2 * UNIT
-    assert ybc_aggregator.total_weight() == 0
     assert ybc_aggregator.staked(alice) == 2 * UNIT
     assert ybc_aggregator.weight(alice) == 0
+
+    packed = ybc_aggregator.packed_weights(alice)
+    assert (packed >> 240) == 9 # epoch
+    mask = (1 << 60) - 1
+    assert packed >> 180 & mask == 0
+    assert packed >> 120 & mask == PACKED_UNIT // 2
+    assert packed >> 60 & mask == PACKED_UNIT
+    assert packed & mask == PACKED_UNIT + PACKED_UNIT // 2
 
     ts += EPOCH_LENGTH
     chain.pending_timestamp = ts
     chain.mine()
-    assert ybc_aggregator.total_weight() == 2 * UNIT
-    assert ybc_aggregator.weight(alice) == UNIT
-
-    with chain.isolate():
-        # change ramp length
-        ybc_aggregator.set_ramp_length(4, sender=deployer)
-        assert ybc_aggregator.weight(alice) == UNIT // 2
+    assert ybc_aggregator.weight(alice) == UNIT // 2
 
     # add bob to the YBC too
     chain.pending_timestamp = ts
     ybc.call(ybc, ybc.add_member.encode_input(bob), sender=charlie)
     assert ybc_hooks.last_stake() == (bob, bob, 2 * UNIT, 0, UNIT)
     assert ybc_aggregator.supply() == 3 * UNIT
-    assert ybc_aggregator.total_weight() == 2 * UNIT
     assert ybc_aggregator.staked(bob) == UNIT
     assert ybc_aggregator.weight(bob) == 0
 
@@ -125,9 +125,8 @@ def test_add_member(chain, deployer, alice, bob, charlie, yfi, styfi, genesis, a
     chain.pending_timestamp = ts
     chain.mine()
     assert ybc_aggregator.supply() == 3 * UNIT
-    assert ybc_aggregator.total_weight() == 3 * UNIT
-    assert ybc_aggregator.weight(alice) == 2 * UNIT
-    assert ybc_aggregator.weight(bob) == UNIT // 2
+    assert ybc_aggregator.weight(alice) == UNIT
+    assert ybc_aggregator.weight(bob) == UNIT // 4
 
 def test_remove_member(chain, deployer, alice, bob, charlie, yfi, styfi, genesis, ybc_aggregator, ybc_hooks, ybc):
     yfi.mint(alice, 3 * UNIT, sender=deployer)
@@ -150,20 +149,13 @@ def test_remove_member(chain, deployer, alice, bob, charlie, yfi, styfi, genesis
     chain.mine()
     assert ybc_hooks.last_unstake() == (ZERO_ADDRESS, 0, 0, 0)
     assert ybc_aggregator.supply() == 3 * UNIT
-    assert ybc_aggregator.total_weight() == 3 * UNIT
     assert ybc_aggregator.staked(alice) == 2 * UNIT
-    assert ybc_aggregator.weight(alice) == UNIT
+    assert ybc_aggregator.weight(alice) == UNIT // 2
     ybc.call(ybc, ybc.remove_member.encode_input(alice), sender=charlie)
     assert ybc_hooks.last_unstake() == (alice, 3 * UNIT, 2 * UNIT, 2 * UNIT)
     assert ybc_aggregator.supply() == UNIT
-    assert ybc_aggregator.total_weight() == 3 * UNIT
     assert ybc_aggregator.staked(alice) == 0
     assert ybc_aggregator.weight(alice) == 0
-
-    ts += EPOCH_LENGTH
-    chain.pending_timestamp = ts
-    chain.mine()
-    assert ybc_aggregator.total_weight() == UNIT
 
 def test_stake(chain, deployer, alice, bob, charlie, yfi, styfi, genesis, ybc_aggregator, ybc_hooks, ybc):
     yfi.mint(alice, 3 * UNIT, sender=deployer)
@@ -190,22 +182,19 @@ def test_stake(chain, deployer, alice, bob, charlie, yfi, styfi, genesis, ybc_ag
     chain.pending_timestamp = ts
     chain.mine()
     assert ybc_aggregator.supply() == 3 * UNIT
-    assert ybc_aggregator.total_weight() == 3 * UNIT
     assert ybc_aggregator.staked(alice) == 2 * UNIT
-    assert ybc_aggregator.weight(alice) == UNIT
+    assert ybc_aggregator.weight(alice) == UNIT // 2
     chain.pending_timestamp = ts
     styfi.deposit(UNIT, alice, sender=charlie)
     assert ybc_hooks.last_stake() == (charlie, alice, 3 * UNIT, 2 * UNIT, UNIT)
     assert ybc_aggregator.supply() == 4 * UNIT
-    assert ybc_aggregator.total_weight() == 3 * UNIT
     assert ybc_aggregator.staked(alice) == 3 * UNIT
-    assert ybc_aggregator.weight(alice) == UNIT
+    assert ybc_aggregator.weight(alice) == UNIT // 2
 
     ts += EPOCH_LENGTH
     chain.pending_timestamp = ts
     chain.mine()
-    assert ybc_aggregator.total_weight() == 4 * UNIT
-    assert ybc_aggregator.weight(alice) == 2 * UNIT
+    assert ybc_aggregator.weight(alice) == UNIT + UNIT // 4
 
     # staking of a non-YBC member is ignored
     styfi.deposit(UNIT, sender=charlie)
@@ -228,27 +217,24 @@ def test_unstake(chain, deployer, alice, bob, charlie, yfi, styfi, genesis, ybc_
     chain.pending_timestamp = ts
     ybc.call(ybc, ybc.add_member.encode_input(bob), sender=deployer)
 
-    ts += EPOCH_LENGTH
+    ts += 3 * EPOCH_LENGTH
     chain.pending_timestamp = ts
     chain.mine()
 
     # unstaking by a YBC member
     assert ybc_aggregator.supply() == 3 * UNIT
-    assert ybc_aggregator.total_weight() == 3 * UNIT
     assert ybc_aggregator.staked(alice) == 2 * UNIT
-    assert ybc_aggregator.weight(alice) == UNIT
+    assert ybc_aggregator.weight(alice) == UNIT + UNIT // 2
     chain.pending_timestamp = ts
     styfi.unstake(UNIT, sender=alice)
     assert ybc_hooks.last_unstake() == (alice, 3 * UNIT, 2 * UNIT, UNIT)
     assert ybc_aggregator.supply() == 2 * UNIT
-    assert ybc_aggregator.total_weight() == 3 * UNIT
     assert ybc_aggregator.staked(alice) == UNIT
     assert ybc_aggregator.weight(alice) == UNIT // 2
 
     ts += EPOCH_LENGTH
     chain.pending_timestamp = ts
     chain.mine()
-    assert ybc_aggregator.total_weight() == 2 * UNIT
     assert ybc_aggregator.weight(alice) == UNIT
 
     # unstaking of a non-YBC member is ignored
@@ -283,20 +269,14 @@ def test_transfer(chain, deployer, alice, bob, charlie, yfi, styfi, genesis, ybc
         chain.mine()
         assert ybc_hooks.last_unstake() == (ZERO_ADDRESS, 0, 0, 0)
         assert ybc_aggregator.supply() == 3 * UNIT
-        assert ybc_aggregator.total_weight() == 3 * UNIT
         assert ybc_aggregator.staked(alice) == 2 * UNIT
-        assert ybc_aggregator.weight(alice) == UNIT
+        assert ybc_aggregator.weight(alice) == UNIT // 2
         chain.pending_timestamp = ts
         styfi.transfer(charlie, UNIT, sender=alice)
         assert ybc_hooks.last_unstake() == (alice, 3 * UNIT, 2 * UNIT, UNIT)
         assert ybc_aggregator.supply() == 2 * UNIT
-        assert ybc_aggregator.total_weight() == 3 * UNIT
         assert ybc_aggregator.staked(alice) == UNIT
-        assert ybc_aggregator.weight(alice) == UNIT // 2
-
-        chain.pending_timestamp = ts + EPOCH_LENGTH
-        chain.mine()
-        assert ybc_aggregator.total_weight() == 2 * UNIT
+        assert ybc_aggregator.weight(alice) == 0
 
     # YBC -> YBC is treated as transfer
     with chain.isolate():
@@ -305,25 +285,23 @@ def test_transfer(chain, deployer, alice, bob, charlie, yfi, styfi, genesis, ybc
 
         assert ybc_hooks.last_transfer() == (ZERO_ADDRESS, ZERO_ADDRESS, ZERO_ADDRESS, 0, 0, 0, 0)
         assert ybc_aggregator.supply() == 3 * UNIT
-        assert ybc_aggregator.total_weight() == 3 * UNIT
         assert ybc_aggregator.staked(alice) == 2 * UNIT
-        assert ybc_aggregator.weight(alice) == UNIT
+        assert ybc_aggregator.weight(alice) == UNIT // 2
         assert ybc_aggregator.staked(charlie) == 0
         assert ybc_aggregator.weight(charlie) == 0
         chain.pending_timestamp = ts
         styfi.transfer(charlie, UNIT, sender=alice)
         assert ybc_hooks.last_transfer() == (alice, alice, charlie, 3 * UNIT, 2 * UNIT, 0, UNIT)
         assert ybc_aggregator.supply() == 3 * UNIT
-        assert ybc_aggregator.total_weight() == 3 * UNIT
         assert ybc_aggregator.staked(alice) == UNIT
-        assert ybc_aggregator.weight(alice) == UNIT // 2
+        assert ybc_aggregator.weight(alice) == 0
         assert ybc_aggregator.staked(charlie) == UNIT
         assert ybc_aggregator.weight(charlie) == 0
 
         chain.pending_timestamp = ts + EPOCH_LENGTH
         chain.mine()
-        assert ybc_aggregator.weight(alice) == UNIT
-        assert ybc_aggregator.weight(charlie) == UNIT // 2
+        assert ybc_aggregator.weight(alice) == 0
+        assert ybc_aggregator.weight(charlie) == UNIT // 4
 
     # non-YBC -> YBC is treated as staking
     with chain.isolate():
@@ -334,21 +312,18 @@ def test_transfer(chain, deployer, alice, bob, charlie, yfi, styfi, genesis, ybc
         chain.pending_timestamp = ts
         chain.mine()
         assert ybc_aggregator.supply() == 3 * UNIT
-        assert ybc_aggregator.total_weight() == 3 * UNIT
         assert ybc_aggregator.staked(alice) == 2 * UNIT
-        assert ybc_aggregator.weight(alice) == UNIT
+        assert ybc_aggregator.weight(alice) == UNIT // 2
         chain.pending_timestamp = ts
         styfi.transfer(alice, UNIT, sender=charlie)
         assert ybc_hooks.last_stake() == (charlie, alice, 3 * UNIT, 2 * UNIT, UNIT)
         assert ybc_aggregator.supply() == 4 * UNIT
-        assert ybc_aggregator.total_weight() == 3 * UNIT
         assert ybc_aggregator.staked(alice) == 3 * UNIT
-        assert ybc_aggregator.weight(alice) == UNIT 
+        assert ybc_aggregator.weight(alice) == UNIT // 2
 
         chain.pending_timestamp = ts + EPOCH_LENGTH
         chain.mine()
-        assert ybc_aggregator.total_weight() == 4 * UNIT
-        assert ybc_aggregator.weight(alice) == 2 * UNIT
+        assert ybc_aggregator.weight(alice) == UNIT + UNIT // 4
 
     # non-YBC -> non-YBC is ignored
     with chain.isolate():
@@ -365,15 +340,3 @@ def test_transfer(chain, deployer, alice, bob, charlie, yfi, styfi, genesis, ybc
         assert ybc_aggregator.supply() == 3 * UNIT
         assert ybc_aggregator.staked(charlie) == 0
         assert ybc_aggregator.staked(deployer) == 0
-
-def test_set_ramp_length(deployer, ybc_aggregator):
-    # ramp length can be changed
-    assert ybc_aggregator.ramp_length() == 2 * EPOCH_LENGTH
-    ybc_aggregator.set_ramp_length(4, sender=deployer)
-    assert ybc_aggregator.ramp_length() == 4 * EPOCH_LENGTH
-
-def test_set_ramp_length_permission(deployer, alice, ybc_aggregator):
-    # ramp length can only be changed by management
-    with reverts():
-        ybc_aggregator.set_ramp_length(4, sender=alice)
-    ybc_aggregator.set_ramp_length(4, sender=deployer)
