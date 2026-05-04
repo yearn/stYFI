@@ -74,7 +74,7 @@ The modules that will be added as operator are:
 - YBCElection
 - YBCRewardDistributor
 
-### YBC WeightA ggregator
+### YBC Weight Aggregator
 Sitting downstream from the global WeightAggregator, the **YBCWeightAggregator** is designed to aggregate staked stYFI and llYFI balances and voting weight for YBC members specifically. It is also supposed to receive membership updates from the YBC.
 
 All upstream operations are translated as follows, depending on the membership of the involved users:

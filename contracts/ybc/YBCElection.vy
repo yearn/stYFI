@@ -6,7 +6,7 @@
 @author Yearn Finance
 @license GNU AGPLv3
 @notice YBC module that deals with adding/removing members based on a vote amongst its members.
-        Any member can propose a vote to add a new member or remove an exisitng member.
+        Any member can propose a vote to add a new member or remove an existing member.
         Proposals can be retracted by the proposer in the same epoch.
         Members can vote on proposals in the second half of the epoch after the proposal is made.
         Members cant vote on their own expulsion.
