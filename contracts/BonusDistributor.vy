@@ -119,7 +119,7 @@ def finalize_period() -> (uint256, uint256, uint256):
     """
     @notice Finalize bonus accounting for a budget period
     @return Tuple with: budget period number, spot token price, growth factor
-    @dev Can only be called by the operator
+    @dev Can only be called by the operator, if set
     """
     assert self.operator in [msg.sender, empty(address)]
     period: uint256 = self.pending_period
