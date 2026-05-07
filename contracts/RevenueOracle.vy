@@ -37,6 +37,8 @@ def __init__(_vault: address):
     assert decimals <= 18
     scale = 10**(36 - convert(decimals, uint256))
 
+    assert extcall IERC20(token).approve(_vault, max_value(uint256), default_return_value=True)
+
 @external
 def price(_token: address) -> uint256:
     """
@@ -60,5 +62,4 @@ def convert(_token: address, _amount: uint256):
     assert _token == token
 
     assert extcall IERC20(token).transferFrom(msg.sender, self, _amount, default_return_value=True)
-    extcall IERC20(token).approve(vault, _amount)
     extcall IERC4626(vault).deposit(_amount, msg.sender)
