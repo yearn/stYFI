@@ -79,7 +79,7 @@ def price(_period: uint256) -> uint256:
     @dev If a bonus distributor is configured, only they may initially call this for the most recent period
     """
     current: uint256 = self._period()
-    assert _period < self._period()
+    assert _period < current
     price: uint256 = self.prices[_period]
 
     if price == 0 and _period + 1 == current:
