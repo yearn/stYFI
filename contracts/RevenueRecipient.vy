@@ -42,6 +42,7 @@ token: public(immutable(IERC20))
 token_split: public(immutable(uint256[3])) # stYFI, treasury, yETH
 management: public(address)
 pending_management: public(address)
+killed: public(bool)
 operator: public(address)
 registry: public(IRegistry)
 accountant: public(IAccountant)
@@ -76,6 +77,8 @@ event ToRewards:
 
 event ToRecovery:
     amount: uint256
+
+event Kill: pass
 
 event SetOperator:
     operator: indexed(address)
@@ -153,6 +156,7 @@ def deposit(_token: address, _amount: uint256) -> (uint256, uint256):
     @dev Only accepts tokens that are whitelisted by having a price oracle assigned
     """
     assert staticcall self.registry.is_team(msg.sender)
+    assert not self.killed
 
     oracle: address = self.oracles[_token]
     assert oracle != empty(address)
@@ -182,6 +186,7 @@ def convert(_token: address, _amount: uint256):
     @dev Only accepts tokens that are whitelisted by having a converter assigned
     """
     assert msg.sender == self.operator
+    assert not self.killed
     converter: address = self.converters[_token]
     assert converter != empty(address)
     assert extcall IERC20(_token).approve(converter, _amount, default_return_value=True)
@@ -257,11 +262,20 @@ def sweep(_token: address, _amount: uint256 = max_value(uint256)):
         amount = staticcall IERC20(_token).balanceOf(self)
 
     if _token == token.address:
-        self._sync_balance()
-        self.last_balance -= amount
-        self.sum_balance -= amount
+        assert self.killed
 
     assert extcall IERC20(_token).transfer(msg.sender, amount, default_return_value=True)
+
+@external
+def kill():
+    """
+    @notice Kill the revenue recipient, making it unable to accept or redistribute revenue
+    @dev Can only be called by management
+    """
+    assert msg.sender == self.management
+
+    self.killed = True
+    log Kill()
 
 @external
 def set_operator(_operator: address):
@@ -395,17 +409,15 @@ def _period() -> uint256:
     return unsafe_div(block.timestamp - genesis, PERIOD_LENGTH)
 
 @internal
-def _sync_balance():
+def _use_balance(_i: uint256, _amount: uint256):
+    assert not self.killed
     current: uint256 = staticcall token.balanceOf(self)
     increase: uint256 = current - self.last_balance
     self.last_balance = current
-    self.sum_balance += increase
+    sum_balance: uint256 = self.sum_balance + increase
+    self.sum_balance = sum_balance
 
-@internal
-def _use_balance(_i: uint256, _amount: uint256):
-    self._sync_balance()
-
-    budget: uint256 = self.sum_balance * token_split[_i] // BPS_PRECISION
+    budget: uint256 = sum_balance * token_split[_i] // BPS_PRECISION
     used: uint256 = self.used[_i] + _amount
     assert used <= budget
 
