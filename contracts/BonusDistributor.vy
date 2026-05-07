@@ -102,7 +102,7 @@ def __init__(_genesis: uint256, _token: address):
     self.management = msg.sender
     self.operator = msg.sender
     self.smoothing_factor = PRECISION
-    self.growth_rate_cap = BPS_PRECISION
+    self.growth_rate_cap = BPS_PRECISION * 4 // 5
     self.bonus_factor = BPS_PRECISION
 
 @external
