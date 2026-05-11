@@ -14,7 +14,7 @@ interface IMemberHooks:
     def on_add_member(_account: address): nonpayable
     def on_remove_member(_account: address): nonpayable
 
-interface IStakedHooks:
+interface IHooks:
     def on_transfer(_caller: address, _from: address, _to: address, _supply: uint256, _prev_staked_from: uint256, _prev_staked_to: uint256, _value: uint256): nonpayable
     def on_stake(_caller: address, _account: address, _prev_supply: uint256, _prev_staked: uint256, _value: uint256): nonpayable
     def on_unstake(_account: address, _prev_supply: uint256, _prev_staked: uint256, _value: uint256): nonpayable
@@ -25,7 +25,7 @@ interface IWeightAggregator:
     def weight(_account: address) -> uint256: view
 
 implements: IMemberHooks
-implements: IStakedHooks
+implements: IHooks
 implements: IWeightAggregator
 
 genesis: public(immutable(uint256))
@@ -34,7 +34,7 @@ pending_management: public(address)
 weight_aggregator: public(IWeightAggregator)
 upstream_weights: public(address)
 upstream_members: public(address)
-downstream: public(IStakedHooks)
+downstream: public(IHooks)
 
 supply: public(uint256)
 packed_weights: public(HashMap[address, uint256])
@@ -256,7 +256,7 @@ def set_downstream(_downstream: address):
     """
     assert msg.sender == self.management
 
-    self.downstream = IStakedHooks(_downstream)
+    self.downstream = IHooks(_downstream)
     log SetDownstream(downstream=_downstream)
 
 @external

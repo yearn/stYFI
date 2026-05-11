@@ -20,7 +20,7 @@ interface IYBC:
 interface IComponent:
     def claim(_account: address) -> uint256: nonpayable
 
-interface IStakedHooks:
+interface IHooks:
     def on_transfer(_caller: address, _from: address, _to: address, _supply: uint256, _prev_staked_from: uint256, _prev_staked_to: uint256, _value: uint256): nonpayable
     def on_stake(_caller: address, _account: address, _prev_supply: uint256, _prev_staked: uint256, _value: uint256): nonpayable
     def on_unstake(_account: address, _prev_supply: uint256, _prev_staked: uint256, _value: uint256): nonpayable
@@ -29,7 +29,7 @@ interface IWeightAggregator:
     def supply() -> uint256: view
     def staked(_account: address) -> uint256: view
 
-implements: IStakedHooks
+implements: IHooks
 implements: IComponent
 
 ybc: public(immutable(IYBC))
