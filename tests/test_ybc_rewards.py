@@ -1,3 +1,4 @@
+from ape import reverts
 from pytest import fixture
 
 EPOCH_LENGTH = 14 * 24 * 60 * 60
@@ -222,3 +223,46 @@ def test_unstake(chain, deployer, alice, bob, charlie, reward, distributor,yfi, 
     assert ybc_rewards.account_reward_integral(bob) == 0
     assert ybc_rewards.pending_rewards(alice) == 8 * UNIT
     assert ybc_rewards.pending_rewards(bob) == 0
+
+def test_kill(deployer, alice, ybc_rewards):
+    # distributor can be killed
+    assert not ybc_rewards.killed()
+    ybc_rewards.kill(sender=deployer)
+    assert ybc_rewards.killed()
+
+    with reverts():
+        ybc_rewards.kill(sender=deployer)
+
+def test_kill_permission(deployer, alice, ybc_rewards):
+    # only management can kill distributor
+    with reverts():
+        ybc_rewards.kill(sender=alice)    
+    ybc_rewards.kill(sender=deployer)
+
+def test_sweep(project, deployer, ybc_rewards):
+    # tokens can be transfered out
+    token = project.MockToken.deploy(sender=deployer)
+    token.mint(ybc_rewards, 3 * UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == 0
+    assert token.balanceOf(ybc_rewards) == 3 * UNIT
+    ybc_rewards.sweep(token, UNIT, sender=deployer)
+    assert token.balanceOf(deployer) == UNIT
+    assert token.balanceOf(ybc_rewards) == 2 * UNIT
+    ybc_rewards.sweep(token, sender=deployer)
+    assert token.balanceOf(deployer) == 3 * UNIT
+    assert token.balanceOf(ybc_rewards) == 0
+
+def test_sweep_reward(deployer, reward, ybc_rewards):
+    # reward tokens can only be transfered out if the distributor has been killed
+    reward.mint(ybc_rewards, 3 * UNIT, sender=deployer)
+
+    with reverts():
+        ybc_rewards.sweep(reward, UNIT, sender=deployer)
+
+    ybc_rewards.kill(sender=deployer)
+
+    assert reward.balanceOf(ybc_rewards) == 3 * UNIT
+    assert reward.balanceOf(deployer) == 0
+    ybc_rewards.sweep(reward, UNIT, sender=deployer)
+    assert reward.balanceOf(ybc_rewards) == 2 * UNIT
+    assert reward.balanceOf(deployer) == UNIT

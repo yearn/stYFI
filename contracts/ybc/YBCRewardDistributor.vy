@@ -189,6 +189,7 @@ def sweep(_token: address, _amount: uint256 = max_value(uint256)):
     @dev Can only be called by management
     """
     assert msg.sender == self.management
+    assert _token != token.address or self.killed
 
     amount: uint256 = _amount
     if _amount == max_value(uint256):
