@@ -15,8 +15,12 @@ def styfi_distributor(project, deployer, reward, distributor):
     return srd
 
 @fixture
-def middleware(project, deployer, styfi, styfi_distributor):
-    middleware = project.StakingMiddleware.deploy(styfi, styfi_distributor, sender=deployer)
+def aggregator(project, deployer):
+    return project.MockHooks.deploy(sender=deployer)
+
+@fixture
+def middleware(project, deployer, styfi, styfi_distributor, aggregator):
+    middleware = project.StakingMiddleware.deploy(styfi, styfi_distributor, aggregator, sender=deployer)
     styfi.set_hooks(middleware, sender=deployer)
     styfi_distributor.set_depositor(middleware, sender=deployer)
     styfi_distributor.set_staking(styfi, sender=deployer)
@@ -47,7 +51,7 @@ def claimer(project, deployer, reward, delegated_distributor):
     delegated_distributor.set_claimer(claimer, True, sender=deployer)
     return claimer
 
-def test_stake(chain, alice, yfi, styfi, delegated, delegated_distributor):
+def test_stake(chain, alice, yfi, styfi, aggregator, delegated, delegated_distributor):
     yfi.mint(alice, 4 * UNIT, sender=alice)
     yfi.approve(delegated, 4 * UNIT, sender=alice)
 
@@ -61,7 +65,7 @@ def test_stake(chain, alice, yfi, styfi, delegated, delegated_distributor):
     # initial deposit
     chain.pending_timestamp = delegated_distributor.genesis()
     delegated.deposit(UNIT, sender=alice)
-
+    assert aggregator.last_stake() == (delegated, delegated, 0, 0, UNIT)
     assert yfi.balanceOf(styfi) == UNIT
     assert styfi.balanceOf(delegated) == UNIT
 
@@ -69,8 +73,9 @@ def test_stake(chain, alice, yfi, styfi, delegated, delegated_distributor):
     delegated.deposit(3 * UNIT, sender=alice)
     assert yfi.balanceOf(styfi) == 4 * UNIT
     assert styfi.balanceOf(delegated) == 4 * UNIT
+    assert aggregator.last_stake() == (delegated, delegated, UNIT, UNIT, 3 * UNIT)
 
-def test_unstake(chain, alice, yfi, styfi, delegated, delegated_distributor):
+def test_unstake(chain, alice, yfi, styfi, aggregator, delegated, delegated_distributor):
     yfi.mint(alice, 4 * UNIT, sender=alice)
     yfi.approve(delegated, 4 * UNIT, sender=alice)
 
@@ -86,6 +91,7 @@ def test_unstake(chain, alice, yfi, styfi, delegated, delegated_distributor):
     assert yfi.balanceOf(styfi) == 3 * UNIT
     assert yfi.balanceOf(delegated) == UNIT
     assert styfi.balanceOf(delegated) == 3 * UNIT
+    assert aggregator.last_unstake() == (delegated, 4 * UNIT, 4 * UNIT, UNIT)
 
     assert delegated.maxWithdraw(alice) == 0
     chain.pending_timestamp = ts + EPOCH_LENGTH // 2

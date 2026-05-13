@@ -11,6 +11,10 @@
 
 from ethereum.ercs import IERC20
 
+interface IWeightAggregator:
+    def genesis() -> uint256: view
+    def weight(_account: address) -> uint256: view
+
 interface VeRewardDistributor:
     def last_claimed(_account: address) -> uint256: view
     def check_lock(_account: address) -> (uint256, uint256): view
@@ -18,24 +22,25 @@ interface VeRewardDistributor:
 event SetYBC:
     ybc: address
 
-styfi: public(immutable(IERC20))
+genesis: public(immutable(uint256))
 styfix: public(immutable(address))
-liquid_locker_depositors: public(immutable(IERC20[3]))
+aggregator: public(immutable(IWeightAggregator))
 ve_reward_distributor: public(immutable(VeRewardDistributor))
 ybc: public(address)
 
+EPOCH_LENGTH: constant(uint256) = 14 * 24 * 60 * 60
+
 @deploy
-def __init__(_styfi: address, _styfix: address, _depositors: address[3], _verd: address):
+def __init__(_styfix: address, _aggregator: address, _verd: address):
     """
     @notice Constructor
-    @param _styfi stYFI address
     @param _styfix stYFIx address
-    @param _depositors liquid locker token depositor addresses
+    @param _aggregator Weight aggregator address
     @param _verd veYFI reward distributor address
     """
-    styfi = IERC20(_styfi)
     styfix = _styfix
-    liquid_locker_depositors = [IERC20(_depositors[0]), IERC20(_depositors[1]), IERC20(_depositors[2])]
+    aggregator = IWeightAggregator(_aggregator)
+    genesis = staticcall aggregator.genesis()
     ve_reward_distributor = VeRewardDistributor(_verd)
     self.ybc = msg.sender
 
@@ -47,6 +52,9 @@ def balanceOf(_account: address) -> uint256:
     @param _account Account to query voting weight for
     @return Voting weight
     """
+    if _account == styfix:
+        return 0
+
     weight: uint256 = self._weight(_account)
     if _account == self.ybc:
         weight += self._weight(styfix)
@@ -59,21 +67,17 @@ def _weight(_account: address) -> uint256:
     @notice Compute voting weight of an account by summing up contributions from 
             stYFI, staked liquid locker tokens and migrated veYFI
     """
-
-    # stYFI
-    weight: uint256 = staticcall styfi.balanceOf(_account)
-
-    # liquid lockers
-    weight += staticcall liquid_locker_depositors[0].balanceOf(_account) + \
-              staticcall liquid_locker_depositors[1].balanceOf(_account) + \
-              staticcall liquid_locker_depositors[2].balanceOf(_account)
+    # stYFI + llYFI
+    weight: uint256 = staticcall aggregator.weight(_account)
 
     # migrated veYFI
     if staticcall ve_reward_distributor.last_claimed(_account) > 0:
         lock_amount: uint256 = 0
         unlock_time: uint256 = 0
         lock_amount, unlock_time = staticcall ve_reward_distributor.check_lock(_account)
-        if block.timestamp < unlock_time:
+        
+        epoch_end: uint256 = genesis + ((block.timestamp - genesis) // EPOCH_LENGTH + 1) * EPOCH_LENGTH
+        if unlock_time >= epoch_end:
             weight += lock_amount
 
     return weight

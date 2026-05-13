@@ -22,6 +22,7 @@ implements: IHooks
 
 upstream: public(immutable(address))
 downstream: public(immutable(IHooks))
+aggregator: public(immutable(IHooks))
 management: public(address)
 pending_management: public(address)
 
@@ -43,14 +44,16 @@ event SetManagement:
     management: indexed(address)
 
 @deploy
-def __init__(_upstream: address, _downstream: address):
+def __init__(_upstream: address, _downstream: address, _aggregator: address):
     """
     @notice Constructor
     @param _upstream The address where hook calls originate from
     @param _downstream The address where hook calls are forwarded to
+    @param _aggregator The address of the weight aggregator contract
     """
     upstream = _upstream
     downstream = IHooks(_downstream)
+    aggregator = IHooks(_aggregator)
     self.management = msg.sender
 
 @external
@@ -69,6 +72,7 @@ def on_transfer(_caller: address, _from: address, _to: address, _supply: uint256
     assert not self.blacklist[_from]
 
     extcall downstream.on_transfer(_caller, _from, _to, _supply, _prev_staked_from, _prev_staked_to, _amount)
+    extcall aggregator.on_transfer(_caller, _from, _to, _supply, _prev_staked_from, _prev_staked_to, _amount)
 
 @external
 def on_stake(_caller: address, _account: address, _prev_supply: uint256, _prev_staked: uint256, _amount: uint256):
@@ -83,6 +87,7 @@ def on_stake(_caller: address, _account: address, _prev_supply: uint256, _prev_s
     assert msg.sender == upstream
 
     extcall downstream.on_stake(_caller, _account, _prev_supply, _prev_staked, _amount)
+    extcall aggregator.on_stake(_caller, _account, _prev_supply, _prev_staked, _amount)
 
 @external
 def on_unstake(_account: address, _prev_supply: uint256, _prev_staked: uint256, _amount: uint256):
@@ -96,6 +101,7 @@ def on_unstake(_account: address, _prev_supply: uint256, _prev_staked: uint256, 
     assert msg.sender == upstream
 
     extcall downstream.on_unstake(_account, _prev_supply, _prev_staked, _amount)
+    extcall aggregator.on_unstake(_account, _prev_supply, _prev_staked, _amount)
 
 @external
 def sweep(_token: address, _amount: uint256 = max_value(uint256)):
