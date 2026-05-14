@@ -5,7 +5,8 @@
 @title Liquid Locker Middleware
 @author Yearn Finance
 @license GNU AGPLv3
-@notice TODO
+@notice Middleware contract for LiquidLockerDepositor hooks. It forwards all state
+        modifying calls to a downstream address as well as to the weight aggregator.
 """
 
 interface IHooks:

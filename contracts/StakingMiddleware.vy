@@ -7,7 +7,7 @@
 @license GNU AGPLv3
 @notice Middleware contract for StakedYFI hooks. Maintains a list of addresses that have instant
         withdrawals enabled, as well as a blacklist for transfers only. It forwards all state
-        modifying calls to a downstream address.
+        modifying calls to a downstream address as well as to the weight aggregator.
 """
 
 from ethereum.ercs import IERC20
