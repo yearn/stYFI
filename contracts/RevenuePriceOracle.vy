@@ -2,7 +2,7 @@
 # pragma optimize gas
 # pragma evm-version cancun
 """
-@title Revenue Oracle
+@title Revenue Price Oracle
 @author Yearn Finance
 @license GNU AGPLv3
 @notice Dual-functionality contract for the revenue recipient, acting as both price oracle for 
