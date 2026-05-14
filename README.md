@@ -196,12 +196,12 @@ Teams depositing revenue on their Team contract will have their revenue routed t
 
 Deposited revenue is priced by the configured oracle and then credited as USD revenue in the TeamAccountant.
 
-The recipient only accepts whitelisted tokens, which can be converted on deposit by a configurable converter. At launch the only whitelisted tokens will be USDC and yvUSDC-1, where USDC is automatically converted to yvUSDC-1 by the RevenueOracle.
+The recipient only accepts whitelisted tokens, which can be converted on deposit by a configurable converter. At launch the only whitelisted tokens will be USDC and yvUSDC-1, where USDC is automatically converted to yvUSDC-1 by the RevenuePriceOracle.
 
 In this iteration of the contract management is allowed to manually distribute yvUSDC-1 between stYFI, treasury and yETH recovery. This is done to give maximum flexibility while teams get used to the new on-chain requirements.
 
-### Revenue Oracle
-The **RevenueOracle** provides prices for a 4626 vault and its underlying naked token. The underlying is fixed at $1 and the vault token is priced using `convertToAssets`.
+### Revenue Price Oracle
+The **RevenuePriceOracle** provides prices for a 4626 vault and its underlying naked token. The underlying is fixed at $1 and the vault token is priced using `convertToAssets`.
 
 This contract also provides funcionality to convert the underlying token into the vault token for usage inside the RevenueRecipient.
 
