@@ -23,7 +23,7 @@ def vault(project, deployer, token):
 
 @fixture
 def oracle(project, deployer, vault):
-    return project.RevenueOracle.deploy(vault, sender=deployer)
+    return project.RevenuePriceOracle.deploy(vault, sender=deployer)
 
 @fixture
 def distributor(project, deployer, genesis, accountant, token, vault, oracle):

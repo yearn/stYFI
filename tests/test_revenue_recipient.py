@@ -77,7 +77,7 @@ def test_deposit_convert(project, deployer, token, vault, accountant, recipient,
     period = 0
     token.set_decimals(6, sender=deployer)
     vault.set_scale(2, sender=deployer)
-    oracle = project.RevenueOracle.deploy(vault, sender=deployer)
+    oracle = project.RevenuePriceOracle.deploy(vault, sender=deployer)
 
     assert oracle.price(token, sender=deployer).return_value == 10**30
     assert oracle.price(vault, sender=deployer).return_value == 2 * 10**30
@@ -188,33 +188,32 @@ def test_to_treasury(chain, deployer, alice, bob, token, vault, recipient):
     with reverts():
         recipient.to_treasury(2 * UNIT + 1, sender=alice)
 
-# # the following tests can only be ran with `--network ethereum:mainnet-fork` flag:
-# def test_to_yeth(chain, project, deployer, alice, bob, token, vault, recipient):
-#     factory = Contract("0xbC587a495420aBB71Bbd40A0e291B64e80117526")
-#     auction = factory.createNewAuction("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", bob, sender=deployer).return_value
-#     auction = project.MockAuction.at(auction)
-#     auction.enable(vault, sender=deployer)
+def test_to_yeth(chain, project, deployer, alice, bob, token, vault, recipient):
+    factory = Contract("0xbC587a495420aBB71Bbd40A0e291B64e80117526")
+    auction = factory.createNewAuction("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", bob, sender=deployer).return_value
+    auction = project.MockAuction.at(auction)
+    auction.enable(vault, sender=deployer)
 
-#     recipient.set_operator(alice, sender=deployer)
-#     recipient.set_recovery_auction(auction, sender=deployer)
+    recipient.set_operator(alice, sender=deployer)
+    recipient.set_recovery_auction(auction, sender=deployer)
 
-#     token.mint(deployer, 20 * UNIT, sender=deployer)
-#     token.approve(vault, 20 * UNIT, sender=deployer)
-#     vault.deposit(20 * UNIT, recipient, sender=deployer)
+    token.mint(deployer, 20 * UNIT, sender=deployer)
+    token.approve(vault, 20 * UNIT, sender=deployer)
+    vault.deposit(20 * UNIT, recipient, sender=deployer)
 
-#     assert recipient.last_balance() == 0
-#     assert recipient.sum_balance() == 0
-#     assert recipient.used(1) == 0
-#     assert vault.balanceOf(bob) == 0
+    assert recipient.last_balance() == 0
+    assert recipient.sum_balance() == 0
+    assert recipient.used(1) == 0
+    assert vault.balanceOf(bob) == 0
 
-#     # we can send 10% of all tokens to recovery
-#     with chain.isolate():
-#         recipient.to_yeth_recovery(2 * UNIT, sender=alice)
-#         assert recipient.last_balance() == 18 * UNIT
-#         assert recipient.sum_balance() == 20 * UNIT
-#         assert recipient.used(2) == 2 * UNIT
-#         assert vault.balanceOf(auction) == 2 * UNIT
+    # we can send 10% of all tokens to recovery
+    with chain.isolate():
+        recipient.to_yeth_recovery(2 * UNIT, sender=alice)
+        assert recipient.last_balance() == 18 * UNIT
+        assert recipient.sum_balance() == 20 * UNIT
+        assert recipient.used(2) == 2 * UNIT
+        assert vault.balanceOf(auction) == 2 * UNIT
 
-#     # but we cant send 10% + 1
-#     with reverts():
-#         recipient.to_yeth_recovery(2 * UNIT + 1, sender=alice)
+    # but we cant send 10% + 1
+    with reverts():
+        recipient.to_yeth_recovery(2 * UNIT + 1, sender=alice)

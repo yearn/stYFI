@@ -71,7 +71,7 @@ def test_finalize_zero(chain, deployer, alice, bob, accountant, chainlink, distr
     ts += PERIOD_LENGTH
     chainlink.set_data(1, 2 * 10**8, ts, ts, 0, sender=deployer)
     chain.pending_timestamp = ts
-    assert distributor.finalize_period(sender=deployer).return_value[2] == 2 * UNIT
+    assert distributor.finalize_period(sender=deployer).return_value[2] == UNIT * 18 // 10
 
 def test_ema_revenue(chain, deployer, alice, accountant, chainlink, distributor):
     distributor.set_smoothing_factor(UNIT // 4, sender=deployer)

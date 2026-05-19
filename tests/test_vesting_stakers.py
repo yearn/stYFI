@@ -51,235 +51,237 @@ def reward(accounts, chain, networks, deployer):
 
     return reward
 
-def test_1up(accounts, chain, networks, deployer, ychad, mock_operator, reward):
-    vest = Contract(VEST_1UP)
-    token = Contract(SUPYFI)
-    assert vest.token() == token
+# the following tests only worked prior to deployment in prod
 
-    staker = project.VestingStaker1UP.deploy(vest, sender=deployer)
-    depositor = project.LiquidLockerDepositor.at(staker.DEPOSITOR())
+# def test_1up(accounts, chain, networks, deployer, ychad, mock_operator, reward):
+#     vest = Contract(VEST_1UP)
+#     token = Contract(SUPYFI)
+#     assert vest.token() == token
 
-    factory = Contract(VEST_FACTORY)
-    factory.set_operator(token, staker, True, sender=ychad)
+#     staker = project.VestingStaker1UP.deploy(vest, sender=deployer)
+#     depositor = project.LiquidLockerDepositor.at(staker.DEPOSITOR())
 
-    recipient = accounts[vest.recipient()]
-    networks.active_provider.set_balance(recipient.address, UNIT)
-    vest.set_operator(staker, True, sender=recipient)
+#     factory = Contract(VEST_FACTORY)
+#     factory.set_operator(token, staker, True, sender=ychad)
 
-    # stake
-    pre = token.balanceOf(vest)
-    staker.stake(UNIT, sender=recipient)
-    assert depositor.balanceOf(staker) == UNIT
-    assert pre - token.balanceOf(vest) == UNIT_1UP
+#     recipient = accounts[vest.recipient()]
+#     networks.active_provider.set_balance(recipient.address, UNIT)
+#     vest.set_operator(staker, True, sender=recipient)
 
-    # stake more
-    staker.stake(2 * UNIT, sender=recipient)
-    assert depositor.balanceOf(staker) == 3 * UNIT
+#     # stake
+#     pre = token.balanceOf(vest)
+#     staker.stake(UNIT, sender=recipient)
+#     assert depositor.balanceOf(staker) == UNIT
+#     assert pre - token.balanceOf(vest) == UNIT_1UP
 
-    # claim rewards
-    pre = reward.balanceOf(recipient)
-    chain.pending_timestamp += 1000
-    staker.claim_rewards(sender=recipient)
-    assert reward.balanceOf(recipient) > pre
+#     # stake more
+#     staker.stake(2 * UNIT, sender=recipient)
+#     assert depositor.balanceOf(staker) == 3 * UNIT
 
-    # unstake
-    ts = chain.pending_timestamp
-    staker.unstake(2 * UNIT, sender=recipient)
-    assert depositor.balanceOf(staker) == UNIT
+#     # claim rewards
+#     pre = reward.balanceOf(recipient)
+#     chain.pending_timestamp += 1000
+#     staker.claim_rewards(sender=recipient)
+#     assert reward.balanceOf(recipient) > pre
 
-    # claim from stream
-    chain.pending_timestamp = ts + STREAM_DURATION // 2
-    pre = token.balanceOf(vest)
-    staker.claim_stream(sender=recipient)
-    assert token.balanceOf(vest) - pre == UNIT_1UP
+#     # unstake
+#     ts = chain.pending_timestamp
+#     staker.unstake(2 * UNIT, sender=recipient)
+#     assert depositor.balanceOf(staker) == UNIT
 
-    # claim more
-    chain.pending_timestamp += STREAM_DURATION
-    pre = token.balanceOf(vest)
-    staker.claim_stream(sender=recipient)
-    assert token.balanceOf(vest) - pre == UNIT_1UP
+#     # claim from stream
+#     chain.pending_timestamp = ts + STREAM_DURATION // 2
+#     pre = token.balanceOf(vest)
+#     staker.claim_stream(sender=recipient)
+#     assert token.balanceOf(vest) - pre == UNIT_1UP
 
-    # cant add non-whitelisted operator
-    staker.unstake(UNIT, sender=recipient)
-    with reverts():
-        staker.set_operator(mock_operator, True, sender=recipient)
+#     # claim more
+#     chain.pending_timestamp += STREAM_DURATION
+#     pre = token.balanceOf(vest)
+#     staker.claim_stream(sender=recipient)
+#     assert token.balanceOf(vest) - pre == UNIT_1UP
 
-    # cant call operator before adding it
-    chain.pending_timestamp += STREAM_DURATION
-    with reverts():
-        mock_operator.redeem(staker, depositor, UNIT, sender=deployer)
+#     # cant add non-whitelisted operator
+#     staker.unstake(UNIT, sender=recipient)
+#     with reverts():
+#         staker.set_operator(mock_operator, True, sender=recipient)
 
-    # add operator
-    factory.set_operator(vest, mock_operator, True, sender=ychad)
-    staker.set_operator(mock_operator, True, sender=recipient)
+#     # cant call operator before adding it
+#     chain.pending_timestamp += STREAM_DURATION
+#     with reverts():
+#         mock_operator.redeem(staker, depositor, UNIT, sender=deployer)
 
-    # call operator
-    with chain.isolate():
-        chain.pending_timestamp += STREAM_DURATION
-        mock_operator.redeem(staker, depositor, UNIT, sender=deployer)
-        assert token.balanceOf(deployer) == UNIT_1UP
+#     # add operator
+#     factory.set_operator(vest, mock_operator, True, sender=ychad)
+#     staker.set_operator(mock_operator, True, sender=recipient)
 
-    # cant call redeem directly on llYFI
-    chain.pending_timestamp += STREAM_DURATION
-    with reverts():
-        staker.call(depositor, depositor.redeem.encode_input(UNIT, recipient, staker), sender=recipient)
+#     # call operator
+#     with chain.isolate():
+#         chain.pending_timestamp += STREAM_DURATION
+#         mock_operator.redeem(staker, depositor, UNIT, sender=deployer)
+#         assert token.balanceOf(deployer) == UNIT_1UP
 
-    # .. unless vest has expired
-    chain.pending_timestamp = vest.end_time()
-    staker.call(depositor, depositor.redeem.encode_input(UNIT, recipient, staker), sender=recipient)
+#     # cant call redeem directly on llYFI
+#     chain.pending_timestamp += STREAM_DURATION
+#     with reverts():
+#         staker.call(depositor, depositor.redeem.encode_input(UNIT, recipient, staker), sender=recipient)
 
-def test_cove(accounts, chain, networks, deployer, ychad, mock_operator, reward):
-    vest = Contract(VEST_COVE)
-    gauge = Contract(COVEYFI_GAUGE)
-    assert vest.token() == gauge
-    token = Contract(gauge.asset())
+#     # .. unless vest has expired
+#     chain.pending_timestamp = vest.end_time()
+#     staker.call(depositor, depositor.redeem.encode_input(UNIT, recipient, staker), sender=recipient)
 
-    staker = project.VestingStakerCove.deploy(vest, sender=deployer)
-    depositor = project.LiquidLockerDepositor.at(staker.DEPOSITOR())
+# def test_cove(accounts, chain, networks, deployer, ychad, mock_operator, reward):
+#     vest = Contract(VEST_COVE)
+#     gauge = Contract(COVEYFI_GAUGE)
+#     assert vest.token() == gauge
+#     token = Contract(gauge.asset())
 
-    factory = Contract(VEST_FACTORY)
-    factory.set_operator(gauge, staker, True, sender=ychad)
+#     staker = project.VestingStakerCove.deploy(vest, sender=deployer)
+#     depositor = project.LiquidLockerDepositor.at(staker.DEPOSITOR())
 
-    recipient = accounts[vest.recipient()]
-    networks.active_provider.set_balance(recipient.address, UNIT)
-    vest.set_operator(staker, True, sender=recipient)
+#     factory = Contract(VEST_FACTORY)
+#     factory.set_operator(gauge, staker, True, sender=ychad)
 
-    # stake
-    pre = gauge.balanceOf(vest)
-    staker.stake(UNIT, sender=recipient)
-    assert depositor.balanceOf(staker) == UNIT
-    assert pre - gauge.balanceOf(vest) == UNIT
+#     recipient = accounts[vest.recipient()]
+#     networks.active_provider.set_balance(recipient.address, UNIT)
+#     vest.set_operator(staker, True, sender=recipient)
 
-    # stake more
-    staker.stake(2 * UNIT, sender=recipient)
-    assert depositor.balanceOf(staker) == 3 * UNIT
+#     # stake
+#     pre = gauge.balanceOf(vest)
+#     staker.stake(UNIT, sender=recipient)
+#     assert depositor.balanceOf(staker) == UNIT
+#     assert pre - gauge.balanceOf(vest) == UNIT
 
-    # claim rewards
-    pre = reward.balanceOf(recipient)
-    chain.pending_timestamp += 1000
-    staker.claim_rewards(sender=recipient)
-    assert reward.balanceOf(recipient) > pre
+#     # stake more
+#     staker.stake(2 * UNIT, sender=recipient)
+#     assert depositor.balanceOf(staker) == 3 * UNIT
 
-    # unstake
-    ts = chain.pending_timestamp
-    staker.unstake(2 * UNIT, sender=recipient)
-    assert depositor.balanceOf(staker) == UNIT
+#     # claim rewards
+#     pre = reward.balanceOf(recipient)
+#     chain.pending_timestamp += 1000
+#     staker.claim_rewards(sender=recipient)
+#     assert reward.balanceOf(recipient) > pre
 
-    # claim from stream
-    chain.pending_timestamp = ts + STREAM_DURATION // 2
-    pre = gauge.balanceOf(vest)
-    staker.claim_stream(sender=recipient)
-    assert gauge.balanceOf(vest) - pre == UNIT
+#     # unstake
+#     ts = chain.pending_timestamp
+#     staker.unstake(2 * UNIT, sender=recipient)
+#     assert depositor.balanceOf(staker) == UNIT
 
-    # claim more
-    chain.pending_timestamp += STREAM_DURATION
-    pre = gauge.balanceOf(vest)
-    staker.claim_stream(sender=recipient)
-    assert gauge.balanceOf(vest) - pre == UNIT
+#     # claim from stream
+#     chain.pending_timestamp = ts + STREAM_DURATION // 2
+#     pre = gauge.balanceOf(vest)
+#     staker.claim_stream(sender=recipient)
+#     assert gauge.balanceOf(vest) - pre == UNIT
 
-    # cant add non-whitelisted operator
-    staker.unstake(UNIT, sender=recipient)
-    with reverts():
-        staker.set_operator(mock_operator, True, sender=recipient)
+#     # claim more
+#     chain.pending_timestamp += STREAM_DURATION
+#     pre = gauge.balanceOf(vest)
+#     staker.claim_stream(sender=recipient)
+#     assert gauge.balanceOf(vest) - pre == UNIT
 
-    # cant call operator before adding it
-    chain.pending_timestamp += STREAM_DURATION
-    with reverts():
-        mock_operator.redeem(staker, depositor, UNIT, sender=deployer)
+#     # cant add non-whitelisted operator
+#     staker.unstake(UNIT, sender=recipient)
+#     with reverts():
+#         staker.set_operator(mock_operator, True, sender=recipient)
 
-    # add operator
-    factory.set_operator(vest, mock_operator, True, sender=ychad)
-    staker.set_operator(mock_operator, True, sender=recipient)
+#     # cant call operator before adding it
+#     chain.pending_timestamp += STREAM_DURATION
+#     with reverts():
+#         mock_operator.redeem(staker, depositor, UNIT, sender=deployer)
 
-    # call operator
-    with chain.isolate():
-        chain.pending_timestamp += STREAM_DURATION
-        mock_operator.redeem(staker, depositor, UNIT, sender=deployer)
-        assert token.balanceOf(deployer) == UNIT
+#     # add operator
+#     factory.set_operator(vest, mock_operator, True, sender=ychad)
+#     staker.set_operator(mock_operator, True, sender=recipient)
 
-    # cant call redeem directly on llYFI
-    chain.pending_timestamp += STREAM_DURATION
-    with reverts():
-        staker.call(depositor, depositor.redeem.encode_input(UNIT, recipient, staker), sender=recipient)
+#     # call operator
+#     with chain.isolate():
+#         chain.pending_timestamp += STREAM_DURATION
+#         mock_operator.redeem(staker, depositor, UNIT, sender=deployer)
+#         assert token.balanceOf(deployer) == UNIT
 
-    # .. unless vest has expired
-    chain.pending_timestamp = vest.end_time()
-    staker.call(depositor, depositor.redeem.encode_input(UNIT, recipient, staker), sender=recipient)
+#     # cant call redeem directly on llYFI
+#     chain.pending_timestamp += STREAM_DURATION
+#     with reverts():
+#         staker.call(depositor, depositor.redeem.encode_input(UNIT, recipient, staker), sender=recipient)
 
-def test_stakedao(accounts, chain, networks, deployer, ychad, mock_operator, reward):
-    vest = Contract(VEST_STAKEDAO)
-    gauge = Contract(SDYFI_GAUGE)
-    assert vest.token() == gauge
-    token = Contract(gauge.staking_token())
+#     # .. unless vest has expired
+#     chain.pending_timestamp = vest.end_time()
+#     staker.call(depositor, depositor.redeem.encode_input(UNIT, recipient, staker), sender=recipient)
 
-    staker = project.VestingStakerStakeDAO.deploy(vest, sender=deployer)
-    depositor = project.LiquidLockerDepositor.at(staker.DEPOSITOR())
+# def test_stakedao(accounts, chain, networks, deployer, ychad, mock_operator, reward):
+#     vest = Contract(VEST_STAKEDAO)
+#     gauge = Contract(SDYFI_GAUGE)
+#     assert vest.token() == gauge
+#     token = Contract(gauge.staking_token())
 
-    factory = Contract(VEST_FACTORY)
-    factory.set_operator(gauge, staker, True, sender=ychad)
+#     staker = project.VestingStakerStakeDAO.deploy(vest, sender=deployer)
+#     depositor = project.LiquidLockerDepositor.at(staker.DEPOSITOR())
 
-    recipient = accounts[vest.recipient()]
-    networks.active_provider.set_balance(recipient.address, UNIT)
-    vest.set_operator(staker, True, sender=recipient)
+#     factory = Contract(VEST_FACTORY)
+#     factory.set_operator(gauge, staker, True, sender=ychad)
 
-    # stake
-    pre = gauge.balanceOf(vest)
-    staker.stake(UNIT, sender=recipient)
-    assert depositor.balanceOf(staker) == UNIT
-    assert pre - gauge.balanceOf(vest) == UNIT
+#     recipient = accounts[vest.recipient()]
+#     networks.active_provider.set_balance(recipient.address, UNIT)
+#     vest.set_operator(staker, True, sender=recipient)
 
-    # stake more
-    staker.stake(2 * UNIT, sender=recipient)
-    assert depositor.balanceOf(staker) == 3 * UNIT
+#     # stake
+#     pre = gauge.balanceOf(vest)
+#     staker.stake(UNIT, sender=recipient)
+#     assert depositor.balanceOf(staker) == UNIT
+#     assert pre - gauge.balanceOf(vest) == UNIT
 
-    # claim rewards
-    pre = reward.balanceOf(recipient)
-    chain.pending_timestamp += 1000
-    staker.claim_rewards(sender=recipient)
-    assert reward.balanceOf(recipient) > pre
+#     # stake more
+#     staker.stake(2 * UNIT, sender=recipient)
+#     assert depositor.balanceOf(staker) == 3 * UNIT
 
-    # unstake
-    ts = chain.pending_timestamp
-    staker.unstake(2 * UNIT, sender=recipient)
-    assert depositor.balanceOf(staker) == UNIT
+#     # claim rewards
+#     pre = reward.balanceOf(recipient)
+#     chain.pending_timestamp += 1000
+#     staker.claim_rewards(sender=recipient)
+#     assert reward.balanceOf(recipient) > pre
 
-    # claim from stream
-    chain.pending_timestamp = ts + STREAM_DURATION // 2
-    pre = gauge.balanceOf(vest)
-    staker.claim_stream(sender=recipient)
-    assert gauge.balanceOf(vest) - pre == UNIT
+#     # unstake
+#     ts = chain.pending_timestamp
+#     staker.unstake(2 * UNIT, sender=recipient)
+#     assert depositor.balanceOf(staker) == UNIT
 
-    # claim more
-    chain.pending_timestamp += STREAM_DURATION
-    pre = gauge.balanceOf(vest)
-    staker.claim_stream(sender=recipient)
-    assert gauge.balanceOf(vest) - pre == UNIT
+#     # claim from stream
+#     chain.pending_timestamp = ts + STREAM_DURATION // 2
+#     pre = gauge.balanceOf(vest)
+#     staker.claim_stream(sender=recipient)
+#     assert gauge.balanceOf(vest) - pre == UNIT
 
-    # cant add non-whitelisted operator
-    staker.unstake(UNIT, sender=recipient)
-    with reverts():
-        staker.set_operator(mock_operator, True, sender=recipient)
+#     # claim more
+#     chain.pending_timestamp += STREAM_DURATION
+#     pre = gauge.balanceOf(vest)
+#     staker.claim_stream(sender=recipient)
+#     assert gauge.balanceOf(vest) - pre == UNIT
 
-    # cant call operator before adding it
-    chain.pending_timestamp += STREAM_DURATION
-    with reverts():
-        mock_operator.redeem(staker, depositor, UNIT, sender=deployer)
+#     # cant add non-whitelisted operator
+#     staker.unstake(UNIT, sender=recipient)
+#     with reverts():
+#         staker.set_operator(mock_operator, True, sender=recipient)
 
-    # add operator
-    factory.set_operator(vest, mock_operator, True, sender=ychad)
-    staker.set_operator(mock_operator, True, sender=recipient)
+#     # cant call operator before adding it
+#     chain.pending_timestamp += STREAM_DURATION
+#     with reverts():
+#         mock_operator.redeem(staker, depositor, UNIT, sender=deployer)
 
-    # call operator
-    with chain.isolate():
-        chain.pending_timestamp += STREAM_DURATION
-        mock_operator.redeem(staker, depositor, UNIT, sender=deployer)
-        assert token.balanceOf(deployer) == UNIT
+#     # add operator
+#     factory.set_operator(vest, mock_operator, True, sender=ychad)
+#     staker.set_operator(mock_operator, True, sender=recipient)
 
-    # cant call redeem directly on llYFI
-    chain.pending_timestamp += STREAM_DURATION
-    with reverts():
-        staker.call(depositor, depositor.redeem.encode_input(UNIT, recipient, staker), sender=recipient)
+#     # call operator
+#     with chain.isolate():
+#         chain.pending_timestamp += STREAM_DURATION
+#         mock_operator.redeem(staker, depositor, UNIT, sender=deployer)
+#         assert token.balanceOf(deployer) == UNIT
 
-    # .. unless vest has expired
-    chain.pending_timestamp = vest.end_time()
-    staker.call(depositor, depositor.redeem.encode_input(UNIT, recipient, staker), sender=recipient)
+#     # cant call redeem directly on llYFI
+#     chain.pending_timestamp += STREAM_DURATION
+#     with reverts():
+#         staker.call(depositor, depositor.redeem.encode_input(UNIT, recipient, staker), sender=recipient)
+
+#     # .. unless vest has expired
+#     chain.pending_timestamp = vest.end_time()
+#     staker.call(depositor, depositor.redeem.encode_input(UNIT, recipient, staker), sender=recipient)

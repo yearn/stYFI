@@ -102,6 +102,7 @@ def test_unstake(chain, deployer, alice, underlying, depositor):
     depositor.deposit(3 * UNIT, sender=alice)
     assert depositor.streams(alice) == (0, 0, 0)
     ts = chain.pending_timestamp
+    chain.pending_timestamp = ts
     depositor.unstake(2 * UNIT // 4, sender=alice)
     assert depositor.totalSupply() == UNIT // 4
     assert depositor.balanceOf(alice) == UNIT // 4

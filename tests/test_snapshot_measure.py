@@ -3,37 +3,45 @@ from pytest import fixture
 EPOCH_LENGTH = 14 * 24 * 60 * 60
 UNIT = 10**18
 SCALES = [1, 2, 3]
-
-
-@fixture
-def hooks(project, deployer):
-    return project.MockHooks.deploy(sender=deployer)
+COMPONENTS_SENTINEL = "0x1111111111111111111111111111111111111111"
 
 @fixture
-def styfi(project, deployer, yfi, hooks):
-    styfi = project.StakedYFI.deploy(yfi, sender=deployer)
-    styfi.set_hooks(hooks, sender=deployer)
-    return styfi
+def srd(chain, project, deployer, reward, styfi, distributor, genesis):
+    chain.pending_timestamp = genesis
+    srd = project.StakingRewardDistributor.deploy(distributor, reward, sender=deployer)
+    srd.set_staking(styfi, sender=deployer)
+    distributor.add_component(srd, 4, 1, COMPONENTS_SENTINEL, sender=deployer)
+    return srd
 
 @fixture
-def styfix(project, deployer, hooks, styfi):
-    styfix = project.DelegatedStakedYFI.deploy(styfi, sender=deployer)
-    styfix.set_hooks(hooks, sender=deployer)
-    return styfix
-
-@fixture
-def ll_tokens(project, deployer):
+def lls(project, deployer):
     return [project.MockToken.deploy(sender=deployer) for _ in SCALES]
 
 @fixture
-def ll_depositors(project, deployer, hooks, ll_tokens):
-    depositors = []
-    for scale, ll_token in zip(SCALES, ll_tokens):
-        depositor = project.LiquidLockerDepositor.deploy(ll_token, scale, "", "", sender=deployer)
-        depositor.set_hooks(hooks, sender=deployer)
-        depositor.set_capacity(UNIT, sender=deployer)
-        depositors.append(depositor)
-    return depositors
+def ll_depositors(project, deployer, lls):
+    return [project.LiquidLockerDepositor.deploy(ll, scale, "", "", sender=deployer) for scale, ll in zip(SCALES, lls)]
+
+@fixture
+def llrd(project, deployer, reward, distributor, ll_depositors):
+    llrd = project.LiquidLockerRewardDistributor.deploy(distributor, reward, 100, ll_depositors, sender=deployer)
+    distributor.add_component(llrd, 4, 1, COMPONENTS_SENTINEL, sender=deployer)
+    for depositor in ll_depositors:
+        depositor.set_capacity(10**20, sender=deployer)
+        depositor.set_hooks(llrd, sender=deployer)
+    return llrd
+
+@fixture
+def aggregator(chain, project, deployer, genesis, srd, llrd):
+    chain.pending_timestamp = genesis + 4 * EPOCH_LENGTH
+    return project.WeightAggregator.deploy(genesis, sender=deployer)
+
+@fixture
+def styfi_middleware(project, deployer, styfi, srd, aggregator):
+    return project.StakingMiddleware.deploy(styfi, srd, aggregator, sender=deployer)
+
+@fixture
+def ll_middlewares(project, deployer, ll_depositors, llrd, aggregator):
+    return [project.LiquidLockerMiddleware.deploy(depositor, llrd, aggregator, sender=deployer) for depositor in ll_depositors]
 
 @fixture
 def veyfi(project, deployer):
@@ -44,10 +52,29 @@ def ve_reward_distributor(project, deployer, reward, veyfi, distributor):
     return project.VotingEscrowRewardDistributor.deploy(distributor, reward, veyfi, sender=deployer)
 
 @fixture
-def measure(project, deployer, styfi, styfix, ll_depositors, ve_reward_distributor):
-    return project.SnapshotMeasure.deploy(styfi, styfix, ll_depositors, ve_reward_distributor, sender=deployer)
+def hooks(project, deployer):
+    return project.MockHooks.deploy(sender=deployer)
 
-def test_measure(chain, deployer, alice, yfi, genesis, styfi, ll_tokens, ll_depositors, veyfi, ve_reward_distributor, measure):
+@fixture
+def styfix(project, deployer, hooks, styfi):
+    styfix = project.DelegatedStakedYFI.deploy(styfi, sender=deployer)
+    styfix.set_hooks(hooks, sender=deployer)
+    return styfix
+
+@fixture
+def measure(project, deployer, styfi, srd, ll_depositors, llrd, styfi_middleware, ll_middlewares, aggregator, ve_reward_distributor, styfix):
+    styfi.set_hooks(styfi_middleware, sender=deployer)
+    srd.set_depositor(styfi_middleware, sender=deployer)
+
+    for i in range(len(SCALES)):
+        ll_depositors[i].set_hooks(ll_middlewares[i], sender=deployer)
+        llrd.set_depositor(ll_depositors[i], ll_middlewares[i], sender=deployer)
+
+    aggregator.activate([styfi_middleware] + ll_middlewares, sender=deployer)
+
+    return project.SnapshotMeasure.deploy(styfix, aggregator, ve_reward_distributor, sender=deployer)
+
+def test_measure(chain, deployer, alice, yfi, genesis, styfi, lls, ll_depositors, veyfi, ve_reward_distributor, measure):
     chain.pending_timestamp = genesis
     assert measure.balanceOf(alice) == 0
 
@@ -60,8 +87,8 @@ def test_measure(chain, deployer, alice, yfi, genesis, styfi, ll_tokens, ll_depo
     # liquid lockers
     for i in range(3):
         amount = SCALES[i] * UNIT
-        ll_tokens[i].mint(alice, amount, sender=deployer)
-        ll_tokens[i].approve(ll_depositors[i], amount, sender=alice)
+        lls[i].mint(alice, amount, sender=deployer)
+        lls[i].approve(ll_depositors[i], amount, sender=alice)
         ll_depositors[i].deposit(amount, sender=alice)
         assert measure.balanceOf(alice) == (i + 2) * UNIT
 

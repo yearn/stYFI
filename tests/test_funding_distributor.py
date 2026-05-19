@@ -84,32 +84,31 @@ def test_claim_immediate(deployer, bob, accountant, distributor, token, oracle, 
     assert token.balanceOf(distributor) == UNIT
     assert token.balanceOf(team) == 2 * UNIT
 
-# # the following test can only be ran with `--network ethereum:mainnet-fork` flag:
-# def test_claim_stream(chain, project, deployer, alice, bob, genesis, registry, accountant, distributor, token, oracle):
-#     registry.add_team(alice, sender=deployer)
-#     token.mint(distributor, 4 * UNIT, sender=deployer)
-#     oracle.set_price(token, UNIT, sender=deployer)
-#     distributor.set_price_oracle(token, oracle, sender=deployer)
-#     distributor.set_vesting_factory(VESTING_FACTORY, sender=deployer)
-#     distributor.approve(alice, 0, token, 4 * UNIT, 1000, sender=deployer)
+def test_claim_stream(chain, project, deployer, alice, bob, genesis, registry, accountant, distributor, token, oracle):
+    registry.add_team("A", alice, sender=deployer)
+    token.mint(distributor, 4 * UNIT, sender=deployer)
+    oracle.set_price(token, UNIT, sender=deployer)
+    distributor.set_price_oracle(token, oracle, sender=deployer)
+    distributor.set_vesting_factory(VESTING_FACTORY, sender=deployer)
+    distributor.approve(alice, 0, token, 4 * UNIT, 1000, sender=deployer)
 
-#     ret = distributor.claim(0, 4 * UNIT, bob, sender=alice).return_value
-#     assert ret[0] == 0 and ret[1] == 4 * UNIT
-#     assert ret[2] != ZERO_ADDRESS
-#     assert accountant.team_costs(alice, 0) == 4 * UNIT
+    ret = distributor.claim(0, 4 * UNIT, bob, sender=alice).return_value
+    assert ret[0] == 0 and ret[1] == 4 * UNIT
+    assert ret[2] != ZERO_ADDRESS
+    assert accountant.team_costs(alice, 0) == 4 * UNIT
 
-#     vest = project.MockVest.at(ret[2])
-#     assert vest.recipient() == bob
-#     assert vest.token() == token
-#     assert vest.start_time() == genesis
-#     assert vest.end_time() == genesis + 1000
-#     assert vest.cliff_length() == 0
-#     assert vest.total_locked() == 4 * UNIT
+    vest = project.MockVest.at(ret[2])
+    assert vest.recipient() == bob
+    assert vest.token() == token
+    assert vest.start_time() == genesis
+    assert vest.end_time() == genesis + 1000
+    assert vest.cliff_length() == 0
+    assert vest.total_locked() == 4 * UNIT
 
-#     chain.pending_timestamp = genesis + 250
-#     assert token.balanceOf(bob) == 0
-#     vest.claim(sender=bob)
-#     assert token.balanceOf(bob) == UNIT
+    chain.pending_timestamp = genesis + 250
+    assert token.balanceOf(bob) == 0
+    vest.claim(sender=bob)
+    assert token.balanceOf(bob) == UNIT
 
 def test_claim_permission(deployer, bob, distributor, token, oracle, team):
     token.mint(distributor, UNIT, sender=deployer)
