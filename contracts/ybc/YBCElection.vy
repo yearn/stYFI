@@ -54,9 +54,10 @@ proposals: public(HashMap[uint256, Proposal])
 votes: public(HashMap[address, HashMap[uint256, uint256]]) # account => bitmap
 
 event Propose:
+    idx: indexed(uint256)
     account: indexed(address)
     proposer: indexed(address)
-    epoch: indexed(uint256)
+    epoch: uint256
     addition: bool
 
 event Retract:
@@ -309,7 +310,7 @@ def _propose(_account: address, _addition: bool) -> uint256:
         threshold=threshold, votes=0, yea=0, retracted=False, executed=False
     )
 
-    log Propose(account=_account, proposer=msg.sender, epoch=epoch, addition=_addition)
+    log Propose(idx=idx, account=_account, proposer=msg.sender, epoch=epoch, addition=_addition)
     return idx
 
 @internal
