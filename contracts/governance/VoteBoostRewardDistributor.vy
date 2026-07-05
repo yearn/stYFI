@@ -5,7 +5,11 @@
 @title Vote Boost Reward Distributor
 @author Yearn Finance
 @license GNU AGPLv3
-@notice TODO
+@notice A component to the RewardDistributor, basing reward weights on the user's total stake in 
+        the system and the participation rate in governance voting. The participation is determined
+        by the fraction of proposals the user has voted on in a sliding window of 6 epochs.
+        This component takes into account staking of the naked token as well as the liquid locker tokens
+        and the legacy voting escrow and applies the legacy boost on the latter two.
 """
 
 from ethereum.ercs import IERC20
@@ -15,6 +19,7 @@ interface IComponent:
 
 interface IDistributor:
     def genesis() -> uint256: view
+    def components(_component: address) -> (address, uint256): view
     def claim() -> (uint256, uint256, uint256): nonpayable
 
 interface IWeightAggregator:
@@ -31,7 +36,7 @@ interface IHooks:
     def on_unstake(_account: address, _prev_supply: uint256, _prev_staked: uint256, _value: uint256): nonpayable
 
 interface IVotingHooks:
-    def on_propose(_idx: uint256): nonpayable
+    def on_propose(_idx: uint256, _proposer: address): nonpayable
     def on_retract(_idx: uint256): nonpayable
     def on_vote(_idx: uint256, _account: address): nonpayable
 
@@ -55,23 +60,22 @@ weight_aggregator: public(IWeightAggregator)
 staking: public(IERC20)
 snapshot: public(VotingEscrowSnapshot)
 distributor: public(IDistributor)
-
 voting: public(HashMap[address, bool])
-num_proposals: public(HashMap[uint256, uint256]) # epoch => num proposals
-proposal_epochs: public(HashMap[address, HashMap[uint256, uint256]]) # voter => idx => epoch
-packed_voted: public(HashMap[address, HashMap[address, HashMap[uint256, uint256]]]) # account => voter => voted bitmap
-packed_num_votes: public(HashMap[address, HashMap[uint256, uint256]]) # account => packed count
-packed_total_weights: public(HashMap[uint256, uint256]) # account => packed weights
-packed_weights: public(HashMap[address, HashMap[uint256, uint256]]) # account => packed weights
-ve_locks: public(HashMap[address, Lock]) # account => ve lock
-ve_migrated: public(HashMap[address, bool]) # account => ve migrated
-
 claimers: public(HashMap[address, bool])
 reward_expiration: public(uint256)
 reclaim_bounty: public(uint256)
 reclaim_recipient: public(address)
 report_bounty: public(uint256)
 report_recipient: public(address)
+
+num_proposals: public(HashMap[uint256, uint256]) # epoch => num proposals
+packed_proposal_epochs: public(HashMap[address, HashMap[uint256, uint256]]) # voter => idx => epoch | has votes
+packed_voted: public(HashMap[address, HashMap[address, HashMap[uint256, uint256]]]) # account => voter => voted bitmap
+packed_num_votes: public(HashMap[address, HashMap[uint256, uint256]]) # account => packed count
+packed_total_weights: public(HashMap[uint256, uint256]) # account => packed weights
+packed_weights: public(HashMap[address, HashMap[uint256, uint256]]) # account => packed weights
+ve_locks: public(HashMap[address, Lock]) # account => ve lock
+ve_migrated: public(HashMap[address, bool]) # account => ve migrated
 
 reward_epoch: public(uint256)
 rewards: public(HashMap[uint256, uint256]) # epoch => rewards
@@ -124,6 +128,10 @@ event SetRewardExpiration:
     bounty: uint256
     recipient: address
 
+event SetReportBounty:
+    bounty: uint256
+    recipient: address
+
 event PendingManagement:
     management: indexed(address)
 
@@ -148,7 +156,7 @@ def __init__(_distributor: address, _token: address, _unlock: uint256):
     @notice Constructor
     @param _distributor The distributor address
     @param _token The reward token
-    @param _unlock Liquid locker veYFI unlock epoch
+    @param _unlock Liquid locker voting escrow unlock epoch
     """
     assert _unlock <= BOOST_DURATION
 
@@ -156,12 +164,10 @@ def __init__(_distributor: address, _token: address, _unlock: uint256):
     token = IERC20(_token)
     ll_unlock_epoch = _unlock
 
+    assert block.timestamp >= genesis + 2 * EPOCH_LENGTH
+
     self.management = msg.sender
     self.distributor = IDistributor(_distributor)
-
-    epoch: uint256 = self._epoch()
-    assert epoch > 0
-    self.reward_epoch = epoch
 
     self.reward_expiration = 26
     self.reclaim_recipient = msg.sender
@@ -193,17 +199,34 @@ def sync_total_weight(_epoch: uint256) -> uint256:
     sh: uint256 = (_epoch % WEIGHT_PACKING) * WEIGHT_SIZE
     total: uint256 = (packed >> sh) & WEIGHT_MASK
 
+    # like the individual user weights, the total weight contains a multiplier for the
+    # number of proposals voted on. we correct for it by dividing out the number of proposals.
+    # this is correct since we only want to achieve full boost if all proposals are voted on
     return total * WEIGHT_PACKING_SCALE // num_proposals
 
 @external
 @view
 def voted(_account: address, _voter: address, _idx: uint256) -> bool:
+    """
+    @notice Query whether an account voted for a specific proposal already
+    @param _account Account to query for
+    @param _voter Voter contract
+    @param _idx Proposal index
+    @return True: voted, False: not voted
+    """
     bitmap: uint256 = self.packed_voted[_account][_voter][_idx // 256]
     return bitmap & (1 << _idx % 256) > 0
 
 @external
 @view
 def num_votes(_epoch: uint256, _account: address) -> uint256:
+    """
+    @notice Query the effective number of proposals voted for by an account in a specific epoch.
+            Represents a rolling count of the past 6 epochs
+    @param _epoch Epoch to query for
+    @param _account Account to query for
+    @return Number of proposals voted for
+    """
     packed: uint256 = self.packed_num_votes[_account][_epoch // NUM_VOTES_PACKING]
     sh: uint256 = (_epoch % NUM_VOTES_PACKING) * NUM_VOTES_SIZE
     num_votes: uint256 = (packed >> sh) & NUM_VOTES_MASK
@@ -213,6 +236,14 @@ def num_votes(_epoch: uint256, _account: address) -> uint256:
 @external
 @view
 def weight(_epoch: uint256, _account: address) -> uint256:
+    """
+    @notice Query the reward weight of an account in a specific epoch.
+            Effectively equal to the snapshotted total stake of the account
+            multiplied by the rolling count of votes in the epoch
+    @param _epoch Epoch to query for
+    @param _account Account to query for
+    @return Reward weight
+    """
     packed: uint256 = self.packed_weights[_account][_epoch // WEIGHT_PACKING]
     sh: uint256 = (_epoch % WEIGHT_PACKING) * WEIGHT_SIZE
     weight: uint256 = (packed >> sh) & WEIGHT_MASK
@@ -358,15 +389,20 @@ def on_unstake(_account: address, _prev_supply: uint256, _prev_staked: uint256, 
     extcall self.downstream.on_unstake(_account, _prev_supply, _prev_staked, _amount)
 
 @external
-def on_propose(_idx: uint256):
+def on_propose(_idx: uint256, _proposer: address):
+    """
+    @notice Triggered by a voting contract upon creation of a proposal
+    @param _idx Proposal index
+    @param _proposer Author of the proposal
+    """
     assert self.voting[msg.sender]
 
     # proposal must not exist
-    assert self.proposal_epochs[msg.sender][_idx] == 0
+    assert self.packed_proposal_epochs[msg.sender][_idx] == 0
 
     # proposals are voted on in the epoch after they are proposed
     epoch: uint256 = self._epoch() + 1
-    self.proposal_epochs[msg.sender][_idx] = epoch
+    self.packed_proposal_epochs[msg.sender][_idx] = epoch << 1
 
     # proposals count towards the boost for 6 epochs, starting with the next epoch
     for i: uint256 in range(6):
@@ -377,34 +413,79 @@ def on_propose(_idx: uint256):
 
 @external
 def on_retract(_idx: uint256):
+    """
+    @notice Triggered by a voting contract upon retraction of a proposal
+    @param _idx Proposal index
+    @dev Can only be called if the proposal does not have any votes yet
+    """
     assert self.voting[msg.sender]
 
-    # proposal must exist and proposed this epoch
-    epoch: uint256 = self._epoch() + 1
-    assert self.proposal_epochs[msg.sender][_idx] == epoch
+    # proposal must exist and not have any votes
+    packed: uint256 = self.packed_proposal_epochs[msg.sender][_idx]
+    assert packed > 0 and packed & 1 == 0
+    self.packed_proposal_epochs[msg.sender][_idx] = 0
 
-    self.proposal_epochs[msg.sender][_idx] = 0
+    epoch: uint256 = self._epoch()
     for i: uint256 in range(6):
-        self.num_proposals[epoch] -= 1
         epoch += 1
+        self.num_proposals[epoch] -= 1
 
 @external
 def on_vote(_idx: uint256, _account: address):
+    """
+    @notice Triggered by a voting contract upon submission of a vote
+    @param _idx Proposal index
+    @param _account Account submitting the vote
+    @dev Can only be called in the epoch after the proposal was created
+    """
     assert self.voting[msg.sender]
 
     # proposal must exist and proposed last epoch
-    assert self.proposal_epochs[msg.sender][_idx] == self._epoch()
+    packed: uint256 = self.packed_proposal_epochs[msg.sender][_idx]
+    assert packed >> 1 == self._epoch()
+
+    # mark proposal as having votes
+    self.packed_proposal_epochs[msg.sender][_idx] = packed | 1
 
     # update voted bitmap
     bitmap: uint256 = self.packed_voted[_account][msg.sender][_idx // 256]
     increment: bool = bitmap & (1 << _idx % 256) == 0
 
     if increment:
+        # first time voting for this proposal
         bitmap |= 1 << _idx % 256
         self.packed_voted[_account][msg.sender][_idx // 256] = bitmap
 
     staked: uint256 = staticcall self.weight_aggregator.staked(_account) 
     self._update_weights(_account, staked, increment)
+
+@external
+def activate():
+    """
+    @notice Activate as component inside the reward distributor
+    @dev Can only be called by management
+    """
+    assert msg.sender == self.management
+    assert self.reward_epoch == 0
+    epoch: uint256 = (staticcall self.distributor.components(self))[1]
+    assert epoch > 0
+    self.reward_epoch = epoch
+
+@external
+def sweep(_token: address, _amount: uint256 = max_value(uint256)):
+    """
+    @notice Transfer out a token
+    @param _token The token address
+    @param _amount The amount of tokens. Defaults to all
+    @dev Can only be called by management
+    """
+    assert msg.sender == self.management
+
+    amount: uint256 = _amount
+    if _amount == max_value(uint256):
+        amount = staticcall IERC20(_token).balanceOf(self)
+
+    assert extcall IERC20(_token).transfer(msg.sender, amount, default_return_value=True)
 
 @external
 def set_upstream(_upstream: address):
@@ -524,6 +605,22 @@ def set_reward_expiration(_expiration: uint256, _bounty: uint256, _recipient: ad
     log SetRewardExpiration(expiration=_expiration, bounty=_bounty, recipient=_recipient)
 
 @external
+def set_report_bounty(_bounty: uint256, _recipient: address):
+    """
+    @notice Set report bounty parameters
+    @param _bounty Bounty (in bps) to give to the caller
+    @param _recipient Recipient of the reclaimed rewards
+    @dev Can only be called by management
+    """
+    assert msg.sender == self.management
+    assert _bounty <= BOUNTY_PRECISION
+    assert _recipient != empty(address) or _bounty == BOUNTY_PRECISION
+
+    self.report_bounty = _bounty
+    self.report_recipient = _recipient
+    log SetReportBounty(bounty=_bounty, recipient=_recipient)
+
+@external
 def set_management(_management: address):
     """
     @notice Set the pending management address.
@@ -549,9 +646,15 @@ def accept_management():
 
 @internal
 def _update_weights(_account: address, _agg_staked: uint256, _voted: bool):
+    """
+    @notice Recalculate reward weights for the next 6 epochs.
+            If triggered by a new vote, also increment the rolling vote count
+    """
     epoch: uint256 = self._epoch()
     self._populate_lock(epoch, _account)
 
+    # the aggregated staking balance is st + ll, so we seperate the two
+    # to be able to apply the boost on the latter
     staked: uint256 = staticcall self.staking.balanceOf(_account)
     ll_staked: uint256 = _agg_staked - staked
 
@@ -577,6 +680,7 @@ def _update_weights(_account: address, _agg_staked: uint256, _voted: bool):
     else:
         ve_unlock = 0
 
+    # update weights for the next 6 epochs, starting with current, taking into account decaying boosts
     slot_n: uint256 = epoch // NUM_VOTES_PACKING
     slot_w: uint256 = epoch // WEIGHT_PACKING
     packed_n: uint256 = self.packed_num_votes[_account][slot_n]
@@ -603,13 +707,15 @@ def _update_weights(_account: address, _agg_staked: uint256, _voted: bool):
             # no need to recalculate weights if user hasnt voted
             continue
 
-        # compute updated weight in this epoch: (stYFI + llYFI + veYFI) * n
+        # compute updated weight in this epoch: (st + ll + ve) * n
         weight: uint256 = staked
 
         if epoch < ll_unlock_epoch:
+            # apply liquid locker boost
             weight += ll_staked * (2 * BOOST_DURATION - epoch) // BOOST_DURATION
 
         if epoch < ve_unlock:
+            # apply voting escrow boost
             weight += ve_weight
             ve_weight -= ve_slope
 
@@ -648,6 +754,9 @@ def _update_weights(_account: address, _agg_staked: uint256, _voted: bool):
 
 @internal
 def _populate_lock(_epoch: uint256, _account: address):
+    """
+    @notice Populate voting escrow lock data if not done already
+    """
     if self.last_claimed[_account] > 0:
         return
 
@@ -672,6 +781,7 @@ def _sync_rewards(_current: uint256) -> bool:
     @notice Sync epoch by epoch rewards by claiming from the distributor
     """
     epoch: uint256 = self.reward_epoch
+    assert epoch > 0
     if epoch == _current:
         return True
 
@@ -716,7 +826,7 @@ def _claim(_account: address, _time: uint256) -> uint256:
 
         for i: uint256 in range(32):
             epoch = unsafe_add(epoch, 1)
-            if epoch // WEIGHT_MASK > slot:
+            if epoch // WEIGHT_PACKING > slot:
                 # next storage slot
                 slot = unsafe_add(slot, 1)
                 packed_t = self.packed_total_weights[slot]
