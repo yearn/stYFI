@@ -30,7 +30,8 @@ event PendingManagement:
 event SetManagement:
     management: indexed(address)
 
-SIZE_MASK: public(constant(uint256)) = (1 << 96) - 1
+MAX_NUM_CALLS: constant(uint256) = 64
+SIZE_MASK: constant(uint256) = (1 << 96) - 1
 
 @deploy
 def __init__():
@@ -42,14 +43,14 @@ def __init__():
 @external
 def execute(_script: Bytes[2048]):
     """
-    @notice Execute a single script consisting of one or more calls
+    @notice Execute a single script consisting of up to 64 calls
     @param _script Script to execute
     @dev Can only be called by an operator
     """
     assert self.operators[msg.sender]
 
     offset: uint256 = 0
-    for i: uint256 in range(32):
+    for i: uint256 in range(MAX_NUM_CALLS):
         if offset == len(_script):
             break
         assert offset + 32 <= len(_script)
