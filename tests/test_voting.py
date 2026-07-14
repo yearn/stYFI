@@ -309,7 +309,7 @@ def test_vote_update(chain, genesis, deployer, alice, bob, voting):
     assert prop.votes == 3 * UNIT // 2
     assert prop.yea == UNIT * 14 // 10
 
-def test_vote_early(chain, genesis, deployer, alice, bob, hooks, voting):
+def test_vote_early(chain, genesis, deployer, alice, voting):
     # proposals cant be voted on before voting opens
     voting.set_vote_parameters(10, deployer, sender=deployer)
     voting.propose(IPFS_HASH, DUMMY_SCRIPT, sender=alice).return_value
@@ -320,6 +320,7 @@ def test_vote_early(chain, genesis, deployer, alice, bob, hooks, voting):
 
     assert voting.status(0) == PROPOSED
     with reverts():
+        chain.pending_timestamp = ts - 1
         voting.vote(alice, 0, 5000, 10000, sender=deployer)
 
     chain.pending_timestamp = ts
@@ -328,7 +329,7 @@ def test_vote_early(chain, genesis, deployer, alice, bob, hooks, voting):
     assert voting.status(0) == VOTING
     voting.vote(alice, 0, 5000, 10000, sender=deployer)
 
-def test_vote_late(chain, genesis, deployer, alice, bob, hooks, voting):
+def test_vote_late(chain, genesis, deployer, alice, voting):
     # proposals cant be voted on after voting closes
     voting.set_vote_parameters(10, deployer, sender=deployer)
     voting.propose(IPFS_HASH, DUMMY_SCRIPT, sender=alice).return_value
@@ -531,7 +532,7 @@ def test_execute_guard(chain, genesis, deployer, alice, bob, executor, voting, t
     voting.execute(0, script, sender=bob)
     assert token.balanceOf(deployer) == UNIT
 
-def test_execute_empty(chain, genesis, deployer, alice, bob, executor, voting, token):
+def test_execute_empty(chain, genesis, deployer, alice, voting):
     # proposals without a script dont need to be executed
     voting.propose(IPFS_HASH, b"", sender=alice).return_value
 
@@ -539,6 +540,11 @@ def test_execute_empty(chain, genesis, deployer, alice, bob, executor, voting, t
     voting.vote(alice, 0, 5000, 10000, sender=deployer)
 
     chain.pending_timestamp = genesis + 3 * EPOCH_LENGTH
+    chain.mine()
+
+    assert voting.status(0) == PASSED
+
+    chain.pending_timestamp = genesis + 4 * EPOCH_LENGTH
     chain.mine()
 
     assert voting.status(0) == EXECUTED

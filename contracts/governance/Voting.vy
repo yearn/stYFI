@@ -218,12 +218,12 @@ def status(_idx: uint256) -> Status:
     if not self._passed(_idx):
         return Status.FAILED
 
-    if self.proposals[_idx].script_hash == EMPTY_SCRIPT_HASH:
-        # proposals without script immediately get marked as executed
-        return Status.EXECUTED
-
     if current_epoch == voting_epoch + 1:
         return Status.PASSED
+
+    if self.proposals[_idx].script_hash == EMPTY_SCRIPT_HASH:
+        # proposals without script get marked as executed
+        return Status.EXECUTED
 
     return Status.EXPIRED    
 
@@ -382,7 +382,7 @@ def execute(_idx: uint256, _script: Bytes[2048]):
     self.proposals[_idx].executed = True
     if len(_script) > 0:
         extcall self.executor.execute(_script)
-        log Execute(executor=msg.sender, idx=_idx)
+    log Execute(executor=msg.sender, idx=_idx)
 
 @external
 def set_propose_parameters(_min_weight: uint256, _cooldown: uint256, _blacklist: address):
