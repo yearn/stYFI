@@ -184,6 +184,7 @@ def _vote(_voting: address, _idx: uint256, _yea: uint256) -> uint256:
 
     # submit user vote
     user_weight: uint256 = extcall IVoting(_voting).vote(msg.sender, _idx, scale, _yea)
+    assert user_weight > 0
 
     if not staticcall self.ybc.members(msg.sender):
         return user_weight
