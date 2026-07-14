@@ -198,6 +198,21 @@ def test_retract(deployer, alice, genesis, veyfi, verd, vbrd, voting):
     for i in range(6):
         assert vbrd.num_proposals(5 + i) == 0
 
+def test_retract_voting(chain, deployer, alice, genesis, veyfi, verd, vbrd, voting):
+    # proposal can still be retracted after voting epoch begins
+    unlock = genesis + 50 * EPOCH_LENGTH
+    veyfi.set_locked(alice, UNIT, unlock, sender=deployer)
+    verd.set_snapshot(alice, UNIT, 50, unlock, sender=deployer)
+    verd.migrate(sender=alice)
+
+    voting.propose(IPFS_HASH, b"", sender=alice)
+
+    chain.pending_timestamp = genesis + 5 * EPOCH_LENGTH
+    voting.retract(0, sender=alice)
+    assert vbrd.packed_proposal_epochs(voting, 0) == 0
+    for i in range(6):
+        assert vbrd.num_proposals(5 + i) == 0
+
 def test_retract_multiple(deployer, alice, vbrd):
     # cant retract multiple times
     vbrd.set_voting(alice, True, sender=deployer)

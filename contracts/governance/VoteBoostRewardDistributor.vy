@@ -425,10 +425,10 @@ def on_retract(_idx: uint256):
     assert packed > 0 and packed & 1 == 0
     self.packed_proposal_epochs[msg.sender][_idx] = 0
 
-    epoch: uint256 = self._epoch()
+    epoch: uint256 = packed >> 1
     for i: uint256 in range(6):
-        epoch += 1
         self.num_proposals[epoch] -= 1
+        epoch += 1
 
 @external
 def on_vote(_idx: uint256, _account: address):
