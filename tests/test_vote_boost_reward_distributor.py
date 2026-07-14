@@ -422,6 +422,33 @@ def test_vote_sequential(chain, deployer, alice, bob, genesis, yfi, styfi, lls, 
 
         assert vbrd.sync_total_weight(e, sender=deployer).return_value == (wa + wb) // n
 
+def test_vote_rollover(chain, deployer, alice, bob, genesis, veyfi, verd, vbrd, voting, voter):
+    # voting sets counts for the next 6 epochs, even if we roll over to the next storage slot
+    unlock = genesis + 100 * EPOCH_LENGTH
+    veyfi.set_locked(alice, UNIT, unlock, sender=deployer)
+    verd.set_snapshot(alice, UNIT, 100, unlock, sender=deployer)
+    verd.migrate(sender=alice)
+    veyfi.set_locked(bob, UNIT, unlock, sender=deployer)
+    verd.set_snapshot(bob, UNIT, 100, unlock, sender=deployer)
+    verd.migrate(sender=bob)
+
+    chain.pending_timestamp = genesis + 61 * EPOCH_LENGTH
+    voting.propose(IPFS_HASH, b"", sender=alice)
+    voting.propose(IPFS_HASH, b"", sender=alice)
+
+    for e in range(62, 68):
+        assert vbrd.num_votes(e, alice) == 0
+        assert vbrd.num_votes(e, bob) == 0
+
+    chain.pending_timestamp = genesis + 63 * EPOCH_LENGTH - 48 * 60 * 60
+    voter.vote_yea(voting, 0, sender=alice)
+    voter.vote_yea(voting, 1, sender=alice)
+    voter.vote_nay(voting, 0, sender=bob)
+
+    for e in range(62, 68):
+        assert vbrd.num_votes(e, alice) == 2
+        assert vbrd.num_votes(e, bob) == 1
+
 def test_ll_unlock(chain, deployer, alice, genesis, yfi, styfi, lls, ll_depositors, veyfi, verd, aggregator, vbrd, voting, voter):
     # weights take into account when llYFI unlocks
     unlock = genesis + 50 * EPOCH_LENGTH

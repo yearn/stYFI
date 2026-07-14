@@ -693,7 +693,7 @@ def _update_weights(_account: address, _agg_staked: uint256, _voted: bool):
             if _voted:
                 # write previous to storage
                 self.packed_num_votes[_account][slot_n] = packed_n
-            slot_n += unsafe_add(slot_n, 1)
+            slot_n = unsafe_add(slot_n, 1)
             packed_n = self.packed_num_votes[_account][slot_n]
 
         sh: uint256 = (epoch % NUM_VOTES_PACKING) * NUM_VOTES_SIZE
