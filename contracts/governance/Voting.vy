@@ -154,6 +154,7 @@ event SetManagement:
     management: indexed(address)
 
 EPOCH_LENGTH: constant(uint256) = 14 * 24 * 60 * 60
+MIN_PROPOSE_COOLDOWN: constant(uint256) = 24 * 60 * 60
 PRECISION: constant(uint256) = 10_000
 ADDITION: constant(bool) = True
 EXPULSION: constant(bool) = False
@@ -171,6 +172,7 @@ def __init__(_genesis: uint256):
     self.management = msg.sender
     self.threshold = PRECISION // 2
     self.propose_min_weight = 10**18
+    self.propose_cooldown = MIN_PROPOSE_COOLDOWN
     self.vote_start = EPOCH_LENGTH // 2
     self.guardian = msg.sender
     self.operator = msg.sender
@@ -394,7 +396,7 @@ def set_propose_parameters(_min_weight: uint256, _cooldown: uint256, _blacklist:
     @dev Can only be called by management
     """
     assert msg.sender == self.management
-    assert _cooldown <= EPOCH_LENGTH
+    assert _cooldown >= MIN_PROPOSE_COOLDOWN and _cooldown <= EPOCH_LENGTH
     assert _blacklist != empty(address)
 
     self.propose_min_weight = _min_weight
