@@ -81,6 +81,7 @@ def vote_yea(_voting: address, _idx: uint256) -> uint256:
     @param _idx Proposal index
     @return Effective vote weight
     @dev Also updates vote for delegated staking and YBC, if applicable
+    @dev Can only be called once together with `vote_nay` per proposal per user
     """
     return self._vote(_voting, _idx, PRECISION)
 
@@ -92,6 +93,7 @@ def vote_nay(_voting: address, _idx: uint256) -> uint256:
     @param _idx Proposal index
     @return Effective vote weight
     @dev Also updates vote for delegated staking and YBC, if applicable
+    @dev Can only be called once together with `vote_yea` per proposal per user
     """
     return self._vote(_voting, _idx, 0)
 
