@@ -824,6 +824,42 @@ def test_claim(chain, project, deployer, alice, bob, genesis, reward, distributo
     chain.pending_timestamp = ts
     assert claimer.claim(sender=bob).return_value == base_amount + boost_amount // 2
 
+def test_claim_defer(chain, project, deployer, alice, bob, genesis, reward, distributor, yfi, styfi, styfi_middleware, srd, voting, voter, vbrd):
+    # defer claims if component is not fully synced
+    reward.approve(distributor, 6 * UNIT, sender=deployer)
+    reward.mint(deployer, 6 * UNIT, sender=deployer)
+    distributor.deposit(6, 6 * UNIT, sender=deployer)
+
+    claimer = project.RewardClaimer.deploy(reward, sender=deployer)
+    claimer.add_component(srd, sender=deployer)
+    claimer.add_component(vbrd, sender=deployer)
+
+    vbrd.set_claimer(alice, True, sender=deployer)
+    vbrd.set_claimer(claimer, True, sender=deployer)
+    srd.set_claimer(claimer, True, sender=deployer)
+
+    yfi.mint(alice, 2 * SMALL_UNIT, sender=alice)
+    yfi.approve(styfi, 2 * SMALL_UNIT, sender=alice)
+    styfi.deposit(SMALL_UNIT, sender=alice)
+    styfi.deposit(SMALL_UNIT, bob, sender=alice)
+
+    chain.pending_timestamp += EPOCH_LENGTH
+    voting.set_propose_parameters(0, 0, styfi_middleware, sender=deployer)
+    voting.propose(IPFS_HASH, b"", sender=alice)
+    voting.propose(IPFS_HASH, b"", sender=alice)
+
+    chain.pending_timestamp = genesis + 13 * EPOCH_LENGTH // 2
+    voter.vote_yea(voting, 0, sender=alice)
+    voter.vote_yea(voting, 1, sender=alice)
+    voter.vote_yea(voting, 0, sender=bob)
+
+    chain.pending_timestamp = genesis + 10 * EPOCH_LENGTH
+    distributor.sync(sender=deployer)
+
+    chain.pending_timestamp = genesis + 40 * EPOCH_LENGTH
+    assert vbrd.claim(alice, sender=alice).return_value == 0
+    assert vbrd.claim(alice, sender=alice).return_value > 0
+
 def test_reclaim(chain, deployer, alice, bob, genesis, reward, distributor, yfi, styfi, styfi_middleware, voting, voter, vbrd):
     # expired rewards can be reclaimed
     for i in range(6, 9):

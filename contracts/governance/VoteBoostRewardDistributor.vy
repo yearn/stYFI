@@ -258,7 +258,10 @@ def claim(_account: address) -> uint256:
     @return Amount of rewards tokens claimed
     """
     assert self.claimers[msg.sender]
-    assert self._sync_rewards(self._epoch())
+    
+    if not self._sync_rewards(self._epoch()):
+        # not fully synced, defer claim
+        return 0
 
     rewards: uint256 = self._claim(_account, block.timestamp)
     if rewards > 0:
