@@ -2,6 +2,7 @@ from ape import reverts
 from pytest import fixture, mark
 
 EPOCH_LENGTH = 14 * 24 * 60 * 60
+PROPOSE_COOLDOWN = 24 * 60 * 60
 COMPONENTS_SENTINEL = '0x1111111111111111111111111111111111111111'
 UNIT = 10**18
 SCALES = [1, 2, 1]
@@ -124,7 +125,7 @@ def measure(project, deployer, genesis, aggregator, styfix_middleware, verd):
 def voting(project, deployer, genesis, styfi_middleware, vbrd, measure):
     voting = project.Voting.deploy(genesis, sender=deployer)
     voting.set_weight_measure(measure, sender=deployer)
-    voting.set_propose_parameters(0, 0, styfi_middleware, sender=deployer)
+    voting.set_propose_parameters(0, PROPOSE_COOLDOWN, styfi_middleware, sender=deployer)
     voting.set_hooks(vbrd, sender=deployer)
     vbrd.set_voting(voting, True, sender=deployer)
     return voting

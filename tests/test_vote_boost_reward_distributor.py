@@ -2,6 +2,7 @@ from ape import reverts
 from pytest import fixture, mark
 
 EPOCH_LENGTH = 14 * 24 * 60 * 60
+PROPOSE_COOLDOWN = 24 * 60 * 60
 COMPONENTS_SENTINEL = '0x1111111111111111111111111111111111111111'
 UNIT = 10**18
 SMALL_UNIT = 10**12
@@ -125,7 +126,7 @@ def voting(project, deployer, genesis, vbrd, measure, styfi_middleware):
     voting = project.Voting.deploy(genesis, sender=deployer)
     voting.set_weight_measure(measure, sender=deployer)
     voting.set_hooks(vbrd, sender=deployer)
-    voting.set_propose_parameters(10**18, 0, styfi_middleware, sender=deployer)
+    voting.set_propose_parameters(10**18, PROPOSE_COOLDOWN, styfi_middleware, sender=deployer)
     vbrd.set_voting(voting, True, sender=deployer)
     return voting
 
@@ -228,6 +229,7 @@ def test_retract_late(chain, deployer, alice, vbrd):
     vbrd.on_propose(0, alice, sender=alice)
     
     chain.pending_timestamp += EPOCH_LENGTH
+    vbrd.on_vote(0, alice, sender=alice)
     with reverts():
         vbrd.on_retract(0, sender=alice)
 
@@ -349,7 +351,7 @@ def test_vote_multiple(chain, deployer, alice, bob, genesis, yfi, styfi, lls, ll
         ll_depositors[i].deposit(amt, sender=bob)
 
     voting.propose(IPFS_HASH, b"", sender=alice)
-    voting.propose(IPFS_HASH, b"", sender=alice)
+    voting.propose(IPFS_HASH, b"", sender=bob)
     chain.pending_timestamp = genesis + 6 * EPOCH_LENGTH - 48 * 60 * 60
     voter.vote_yea(voting, 0, sender=alice)
     voter.vote_yea(voting, 1, sender=alice)
@@ -399,7 +401,7 @@ def test_vote_sequential(chain, deployer, alice, bob, genesis, yfi, styfi, lls, 
         ll_depositors[i].deposit(amt, sender=bob)
 
     voting.propose(IPFS_HASH, b"", sender=alice)
-    voting.propose(IPFS_HASH, b"", sender=alice)
+    voting.propose(IPFS_HASH, b"", sender=bob)
     chain.pending_timestamp = genesis + 6 * EPOCH_LENGTH - 48 * 60 * 60
     voter.vote_yea(voting, 0, sender=alice)
     voter.vote_yea(voting, 1, sender=alice)
@@ -449,7 +451,7 @@ def test_vote_rollover(chain, deployer, alice, bob, genesis, veyfi, verd, vbrd, 
 
     chain.pending_timestamp = genesis + 61 * EPOCH_LENGTH
     voting.propose(IPFS_HASH, b"", sender=alice)
-    voting.propose(IPFS_HASH, b"", sender=alice)
+    voting.propose(IPFS_HASH, b"", sender=bob)
 
     for e in range(62, 68):
         assert vbrd.num_votes(e, alice) == 0
@@ -797,9 +799,9 @@ def test_claim(chain, project, deployer, alice, bob, genesis, reward, distributo
     styfi.deposit(SMALL_UNIT, bob, sender=alice)
 
     chain.pending_timestamp += EPOCH_LENGTH
-    voting.set_propose_parameters(0, 0, styfi_middleware, sender=deployer)
+    voting.set_propose_parameters(0, PROPOSE_COOLDOWN, styfi_middleware, sender=deployer)
     voting.propose(IPFS_HASH, b"", sender=alice)
-    voting.propose(IPFS_HASH, b"", sender=alice)
+    voting.propose(IPFS_HASH, b"", sender=bob)
 
     chain.pending_timestamp = genesis + 13 * EPOCH_LENGTH // 2
     voter.vote_yea(voting, 0, sender=alice)
@@ -844,9 +846,9 @@ def test_claim_defer(chain, project, deployer, alice, bob, genesis, reward, dist
     styfi.deposit(SMALL_UNIT, bob, sender=alice)
 
     chain.pending_timestamp += EPOCH_LENGTH
-    voting.set_propose_parameters(0, 0, styfi_middleware, sender=deployer)
+    voting.set_propose_parameters(0, PROPOSE_COOLDOWN, styfi_middleware, sender=deployer)
     voting.propose(IPFS_HASH, b"", sender=alice)
-    voting.propose(IPFS_HASH, b"", sender=alice)
+    voting.propose(IPFS_HASH, b"", sender=bob)
 
     chain.pending_timestamp = genesis + 13 * EPOCH_LENGTH // 2
     voter.vote_yea(voting, 0, sender=alice)
@@ -876,9 +878,9 @@ def test_reclaim(chain, deployer, alice, bob, genesis, reward, distributor, yfi,
     styfi.deposit(SMALL_UNIT, bob, sender=alice)
 
     chain.pending_timestamp += EPOCH_LENGTH
-    voting.set_propose_parameters(0, 0, styfi_middleware, sender=deployer)
+    voting.set_propose_parameters(0, PROPOSE_COOLDOWN, styfi_middleware, sender=deployer)
     voting.propose(IPFS_HASH, b"", sender=alice)
-    voting.propose(IPFS_HASH, b"", sender=alice)
+    voting.propose(IPFS_HASH, b"", sender=bob)
 
     chain.pending_timestamp = genesis + 13 * EPOCH_LENGTH // 2
     voter.vote_yea(voting, 0, sender=alice)

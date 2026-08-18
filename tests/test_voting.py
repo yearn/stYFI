@@ -4,6 +4,7 @@ from pytest import fixture
 
 EPOCH_LENGTH = 14 * 24 * 60 * 60
 DECAY_LENGTH = 24 * 60 * 60
+PROPOSE_COOLDOWN = 24 * 60 * 60
 UNIT = 10**18
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 PROPOSED  = 1 << 0
@@ -45,7 +46,7 @@ def voting(chain, project, deployer, genesis, measure, hooks, blacklist, executo
     voting = project.Voting.deploy(genesis, sender=deployer)
     voting.set_weight_measure(measure, sender=deployer)
     voting.set_hooks(hooks, sender=deployer)
-    voting.set_propose_parameters(10**18, 0, blacklist, sender=deployer)
+    voting.set_propose_parameters(10**18, PROPOSE_COOLDOWN, blacklist, sender=deployer)
     voting.set_vote_parameters(EPOCH_LENGTH // 2, deployer, sender=deployer)
     voting.set_execute_parameters(0, False, executor, sender=deployer)
     executor.set_operator(voting, True, sender=deployer)
@@ -55,7 +56,7 @@ def voting(chain, project, deployer, genesis, measure, hooks, blacklist, executo
 def token(project, deployer):
     return project.MockToken.deploy(sender=deployer)
 
-def test_propose(chain, alice, hooks, voting):
+def test_propose(chain, alice, bob, hooks, voting):
     # proposals can be created
     assert voting.last_proposed(alice) == 0
     assert hooks.last_proposer() == ZERO_ADDRESS
@@ -77,10 +78,10 @@ def test_propose(chain, alice, hooks, voting):
     assert prop.ipfs.hex() == IPFS_HASH[2:]
     assert prop.script_hash == keccak(DUMMY_SCRIPT)
 
-    id = voting.propose(IPFS_HASH, DUMMY_SCRIPT, sender=alice).return_value
+    id = voting.propose(IPFS_HASH, DUMMY_SCRIPT, sender=bob).return_value
     assert id == 1
     assert voting.num_proposals() == 2
-    assert voting.proposals(1).proposer == alice
+    assert voting.proposals(1).proposer == bob
     assert voting.status(1) == PROPOSED
     assert hooks.last_proposal() == 1
 
@@ -122,29 +123,29 @@ def test_propose_blacklist(deployer, alice, blacklist, voting):
     blacklist.set_blacklist(alice, False, sender=deployer)
     voting.propose(IPFS_HASH, DUMMY_SCRIPT, sender=alice)
 
-def test_retract(alice, hooks, voting):
+def test_retract(alice, bob, hooks, voting):
     # proposals can be retracted
     voting.propose(IPFS_HASH, DUMMY_SCRIPT, sender=alice)
     with reverts():
         # non-existing proposal
-        voting.retract(1, sender=alice)
-    
-    voting.propose(IPFS_HASH, DUMMY_SCRIPT, sender=alice)
+        voting.retract(1, sender=bob)
+
+    voting.propose(IPFS_HASH, DUMMY_SCRIPT, sender=bob)
     assert voting.status(1) == PROPOSED
     assert not voting.proposals(1).retracted
-    voting.retract(1, sender=alice)
+    voting.retract(1, sender=bob)
     assert voting.status(1) == RETRACTED
     assert voting.proposals(1).retracted
     assert hooks.last_retract() == 1
 
     # cant retract again
     with reverts():
-        voting.retract(1, sender=alice)
+        voting.retract(1, sender=bob)
 
-def test_retract_late(chain, deployer, alice, genesis, hooks, voting):
+def test_retract_late(chain, deployer, alice, bob, genesis, hooks, voting):
     # proposals can only be retracted if there are no votes
     voting.propose(IPFS_HASH, DUMMY_SCRIPT, sender=alice)
-    voting.propose(IPFS_HASH, DUMMY_SCRIPT, sender=alice)
+    voting.propose(IPFS_HASH, DUMMY_SCRIPT, sender=bob)
     
     chain.pending_timestamp = genesis + 5 * EPOCH_LENGTH // 2
     chain.mine()
@@ -155,7 +156,7 @@ def test_retract_late(chain, deployer, alice, genesis, hooks, voting):
         voting.retract(0, sender=alice)
 
     # but can still retract a proposal without votes
-    voting.retract(1, sender=alice)
+    voting.retract(1, sender=bob)
     assert voting.status(1) == RETRACTED
     assert hooks.last_retract() == 1
 
@@ -170,7 +171,7 @@ def test_retract_permission(alice, bob, voting):
 def test_flag(deployer, alice, bob, hooks, voting):
     # proposals can be flagged
     voting.set_operator(bob, sender=deployer)
-    voting.propose(IPFS_HASH, DUMMY_SCRIPT, sender=alice)
+    voting.propose(IPFS_HASH, DUMMY_SCRIPT, sender=bob)
     with reverts():
         # non-existing proposal
         voting.flag(1, ".", sender=bob)
@@ -194,7 +195,7 @@ def test_flag_late(chain, deployer, alice, bob, genesis, hooks, voting):
     voting.set_operator(bob, sender=deployer)
 
     voting.propose(IPFS_HASH, DUMMY_SCRIPT, sender=alice)
-    voting.propose(IPFS_HASH, DUMMY_SCRIPT, sender=alice)
+    voting.propose(IPFS_HASH, DUMMY_SCRIPT, sender=bob)
     
     chain.pending_timestamp = genesis + 5 * EPOCH_LENGTH // 2
     chain.mine()
@@ -213,7 +214,7 @@ def test_veto(deployer, alice, bob, hooks, voting):
     # proposals can be vetoed
     voting.set_guardian(bob, sender=deployer)
     voting.accept_guardian(sender=bob)
-    voting.propose(IPFS_HASH, DUMMY_SCRIPT, sender=alice)
+    voting.propose(IPFS_HASH, DUMMY_SCRIPT, sender=bob)
     with reverts():
         # non-existing proposal
         voting.veto(1, ".", sender=bob)
@@ -237,7 +238,7 @@ def test_veto_votes(chain, deployer, alice, bob, genesis, hooks, voting):
     voting.set_guardian(bob, sender=deployer)
     voting.accept_guardian(sender=bob)
     voting.propose(IPFS_HASH, DUMMY_SCRIPT, sender=alice)
-    voting.propose(IPFS_HASH, DUMMY_SCRIPT, sender=alice)
+    voting.propose(IPFS_HASH, DUMMY_SCRIPT, sender=bob)
 
     chain.pending_timestamp = genesis + 5 * EPOCH_LENGTH // 2
     chain.mine()
@@ -255,7 +256,7 @@ def test_veto_passed(chain, deployer, alice, bob, genesis, hooks, voting):
     voting.set_guardian(bob, sender=deployer)
     voting.accept_guardian(sender=bob)
     voting.propose(IPFS_HASH, DUMMY_SCRIPT, sender=alice)
-    voting.propose(IPFS_HASH, DUMMY_SCRIPT, sender=alice)
+    voting.propose(IPFS_HASH, DUMMY_SCRIPT, sender=bob)
 
     chain.pending_timestamp = genesis + 5 * EPOCH_LENGTH // 2
     chain.mine()
