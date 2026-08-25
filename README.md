@@ -6,10 +6,11 @@
 The **RewardDistributor**'s task is to distribute token rewards each epoch to a set of components, distributing them proportionally to each component according to their self reported weight. Rewards for epoch `N` are claimable by each component in epoch `N+1` onward. Rewards are claimed in order.
 Anyone is allowed to schedule rewards for a future epoch by depositing them into the contract. The contract can also pull in tokens from another contract, if configured.
 
-The components that are intended to be added at launch are:
+The components that are intended to be added are:
 - StakingRewardDistributor
 - LiquidLockerRewardDistributor
 - VotingEscrowRewardDistributor
+- VoteBoostRewardDistributor
 
 ### Staked YFI
 The **StakedYFI** contract is a ERC4626 vault that is 1:1 to the underlying token, YFI. It reports user operations to a hook. It does not allow instant withdrawals, except for addresses whitelisted by the hook. Unstaking burns the vault shares immediately and gradually releases the underlying tokens over a streaming period.
@@ -49,8 +50,14 @@ The **VotingEscrowRewardDistributor** is another component in the reward distrib
 ### Delegated Staked YFI
 The **DelegatedStakedYFI** contract is another ERC4626 1:1 with YFI. It deposits the YFI into the StakedYFI contract and works with the assumption that it is configured to bypass its unstaking stream. This contract maintains its own unstaking stream which is functionally equivalent to StakedYFI. It also reports its own state changing operations (transfer/stake/unstake) to a hook contract.
 
+### Delegated Staking Middleware
+The **DelegatedStakingMiddleware** contract will be the hook recipient from the delegated staked YFI contract. It passes all operation hooks down to a downstream address. It also snapshots the delegated supply at the last epoch boundary for governance purposes.
+
 ### Delegated Staking Reward Distributor
-The **DelegatedStakingRewardDistributor** will be the hook contract in the delegated staked YFI contract. Unlike the other distributors it is NOT intended to be a component in the global reward distributor. Instead it acts like a regular depositor into stYFI and claims rewards directly from the StakingRewardDistributor, and should be whitelisted there as such. Rewards are claimed on each user operation and are distributed proportionally according to the staked balances.
+The **DelegatedStakingRewardDistributor** will be the downstream hook recipient in the DelegatedStakingMiddleware. Unlike the other distributors it is NOT intended to be a component in the global reward distributor. Instead the delegated staked YFI contract acts like a regular depositor into stYFI and this distributor claims rewards from the DelegatedStakingRewardClaimer, which in turn claims from the StakingRewardDistributor. Rewards are claimed on each user operation and are distributed proportionally according to the staked balances.
+
+### Delegated Staking Reward Claimer
+With the introduction of voting, delegated staking now receives rewards from two sources: staking and vote boosts. The **DelegatedStakingRewardClaimer** claims from both those components at the same time and forwards the rewards. It is intended to be configured as the address the DelegatedStakingRewardDistributor claims from, as that is only able to claim from a single source.
 
 ### Reward Claimer
 None of the reward distributors support direct interactions from end users to claim their rewards. Instead the **RewardClaimer** is the user facing contract. It will claim rewards on their behalf from all the components at once.
@@ -61,6 +68,7 @@ The components that will be added are:
 - VotingEscrowRewardDistributor
 - DelegatedStakingRewardDistributor
 - YBCRewardDistributor
+- VoteBoostRewardDistributor
 
 ## Yearn Builder Collective (YBC)
 
@@ -109,6 +117,25 @@ A passed proposal can be executed by anyone during epoch `N+1`. If a passed prop
 ### YBC Bonus Recipient
 The **YBCBonusRecipient** is a simple helper contract that takes in YFI deposits and stakes it into stYFI for the YBC.
 
+## Governance
+
+### Voting
+The **Voting** contract manages the full lifecycle of governance proposals. A proposal consists of a IPFS hash and optionally a script to execute. Any user with minimum amount of voting weight is allowed to create proposals. A proposal created in epoch `N` is voted on at the end of epoch `N+1` and if passed becomes executable in `N+2`. A guardian is able to veto any proposal before it is executed, permanently preventing execution. In addition the guardian is allowed to appoint an operator which is allowed to flag spam/malformed proposals before they receive votes, preventing them from being voted on. Submitting votes is not done directly on this contract, rather it delegates this to a specialized contract which will be the Voter. This will allow implementation of advanced features such as delegations and weight decay without the need to redeploy the voting contract.
+Proposals that reach at least the required threshold of votes in favor will become executable. Executions are passed on to a configured executor contract.
+
+### Voter
+The end-user will submit their votes on governance proposals to the **Voter**. This contract adds a linear weight decay near the end of the epoch. The contract also tracks the total vote for the YBC and stYFIx, which is determined by the blended votes of the YBC members, weighted by their YBC weight. Whenever a YBC member submits their vote, the new blended vote is determined and the updated votes for the YBC and stYFIx are submitted to the Voter contract.
+
+### Executor
+The **Executor** allows for execution of arbitrary function calls by whitelisted operators. It is intended to be used inside the voting contract. This contract should hold the privileged roles inside the protocol. This allows for easy swapping out of voting contracts by changing the operators without having to move the priviliged role to new contracts.
+
+### Weight Measure
+The governance voting weight is determined by the **WeightMeasure**. It sums up the weight from the WeightAggregator (which counts staked YFI and liquid locker YFI) and any migrated voting escrow position, if still active.
+Because of the way the weight updates are processed inside the aggregator, it is not suitable to be used to determine the delegated staker weight. Instead this weight is taken as the weight from the DelegatedStakingMiddleware, which snapshots the total amount delegated at the end of the previous epoch.
+
+### Vote Boost Reward Distributor
+The **VoteBoostRewardDistributor** will be a component inside the RewardDistributor and RewardClaimer. The reward weight of each user inside this component is equal to their stake multiplied by their governance participation rate of the last 6 epochs. To achieve this the contract has hooks for vote operations and (un)stake operations. Any governance proposal is counted for 6 epoch, starting with the voting epoch. Whenever a user votes or (un)stakes, their weight is updated for 6 sequential epochs to `s_i * v_i / p_i`, where `s_i` is their total stake after applying the decaying legacy boosts, `v_i` is the number of counted votes and `p_i` the number of counted proposals in epoch `i`.
+
 ## Call flowchart
 ```mermaid
 flowchart TD
@@ -119,10 +146,11 @@ flowchart TD
     C[LiquidLockerRewardDistributor]
 
     E[stYFI] --> |"on state change"| J
-    G[stYFIx] --> E
+    G[stYFIx] --> |"stake"| E
     F["llYFI (x3)"] --> |"on state change"| K
 
-    G --> |"on state change"| H[DelegatedStakingRewardDistributor]
+    G --> |"on state change"| S
+    S[stYFIx middleware] --> H[DelegatedStakingRewardDistributor]
     H --> |"claim"| B
 
     Y[Yearn] --> |"deposit rewards"|A
@@ -137,6 +165,7 @@ flowchart TD
     I --> |"claim"| C
     I --> |"claim"| H
     I --> |"claim"| N
+    I --> |"claim"| Q
     U --> |"claim rewards"| I
 
     U --> |"stake"| E
@@ -153,15 +182,22 @@ flowchart TD
 
     L[WeightAggregator]
     M[YBCWeightAggregator]
-    L --> |"iff YBC member"| M
+    L --> Q
+    Q --> |"iff YBC member"| M
 
     N[YBCRewardDistributor]
-    M --> |sync| N
-    N --> |claim| P
+    M --> |"sync"| N
+    N --> |"claim"| P
 
     P[YBC]
     O[YBCElection]
     O --> |"on election"| P
+
+    Q[VoteBoostRewardDistributor]
+    Q --> |"claim"| A
+
+    R[Voting]
+    R --> |"vote"| Q
 ```
 
 ## Teams
