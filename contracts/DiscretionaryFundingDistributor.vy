@@ -5,11 +5,12 @@
 @title Disrectionary Funding Distributor
 @author Yearn Finance
 @license GNU AGPLv3
-@notice Maintains a list of approved funding and distributes the funding to the team upon request. 
+@notice Maintains a list of approved funding and distributes the funding to the team during approval or upon request. 
         Funding is either sent directly or in a vesting contract, depending on the duration specified
         in the approval as well as the time of claim.
         Supports returning of unused funding, which reduces the team's cost by the average price of 
         the tokens during all the claims.
+        Contract is intended to be standalone and not to be set as the canonical funding distributor in the registry.
 """
 
 from ethereum.ercs import IERC20
