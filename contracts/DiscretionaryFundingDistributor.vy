@@ -167,6 +167,7 @@ def approve(_ipfs: bytes32, _team: address, _period: uint256, _token: address, _
     @dev Can only be called by management
     """
     assert msg.sender == self.management
+    assert _ipfs != empty(bytes32)
     assert _team != empty(address)
     assert _period >= self._period()
     assert _token != empty(address)
